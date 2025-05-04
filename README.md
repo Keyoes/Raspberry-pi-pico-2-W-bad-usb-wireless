@@ -21,7 +21,7 @@ Before getting started, you'll need:
 
 ## 🛠️ Installation Guide
 
-Step 1: Flash CircuitPython to your Pico
+### Step 1: Flash CircuitPython to your Pico
 Removing Existing Firmware ex(MicroPython)
 If your Raspberry Pi Pico 2 W already has MicroPython, FlashNuke, or other firmware installed, you should remove it first:
 
