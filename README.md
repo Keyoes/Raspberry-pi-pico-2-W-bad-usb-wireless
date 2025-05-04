@@ -11,9 +11,6 @@ A powerful BadUSB controller for Raspberry Pi Pico 2 W with a web interface for 
 </p>
 
 
-##### KEYBOARD SUPPORT EN (SUA)
-
-
 ## 🔥 Features
 
 - **Web-based interface** for uploading and executing BadUSB payloads
@@ -24,6 +21,7 @@ A powerful BadUSB controller for Raspberry Pi Pico 2 W with a web interface for 
 - **Command history** and payload logging
 - **Fully responsive UI** with Kali Linux-inspired terminal design
 - **RESTful API** for programmatic control
+- keyboard support EN (SUA)
 
 ## 📋 Prerequisites
 
