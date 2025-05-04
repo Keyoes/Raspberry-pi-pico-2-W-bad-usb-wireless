@@ -2,6 +2,12 @@
 
 A powerful BadUSB controller for Raspberry Pi Pico 2 W with a web interface for remote payload management.
 
+### Desktop Interface
+![Desktop Interface](screenshots/desktop_view.png)
+
+### Mobile Interface (iPhone/iOS)
+![Mobile Interface](screenshots/mobile_view.png)
+
 ## 🔥 Features
 
 - **Web-based interface** for uploading and executing BadUSB payloads
