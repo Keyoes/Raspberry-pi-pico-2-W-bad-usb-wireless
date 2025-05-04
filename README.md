@@ -7,7 +7,7 @@ A powerful BadUSB controller for Raspberry Pi Pico 2 W with a web interface for 
 
 ### Mobile Interface (iPhone/iOS)
 <p align="center">
-  <img src="https://https://github.com/Keyoes/Raspberry-pi-pico-2-W-bad-usb-wireless/blob/c162099be92f641ecbc848885c718d8e7cdb4dfb/mobile.jpg" alt="Descriere" width="300"/>
+  <img src="https://github.com/Keyoes/Raspberry-pi-pico-2-W-bad-usb-wireless/blob/c162099be92f641ecbc848885c718d8e7cdb4dfb/mobile.jpg" alt="Descriere" width="300"/>
 </p>
 
 
