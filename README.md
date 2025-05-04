@@ -135,6 +135,80 @@ led.value = False
 4. Open a web browser and navigate to the IP address (e.g., `http://192.168.1.100`)
 5. The KEYOES BadUSB Controller interface should load
 
+# Safely Editing BadUSB Python Code (code.py)
+
+This guide explains how to safely edit the `code.py` file for your Raspberry Pi Pico W BadUSB device without risking automatic execution of potentially harmful commands when connecting the device to your computer.
+
+## Table of Contents
+- [Introduction](#introduction)
+- [The Risk of Direct Editing](#the-risk-of-direct-editing)
+- [Method 1: Using BOOTSEL Mode](#method-1-using-bootsel-mode)
+- [Method 2: Disabling Automatic Execution](#method-2-disabling-automatic-execution)
+- [Method 3: Web Interface Editing](#method-3-web-interface-editing)
+- [Method 4: Creating a Development Version](#method-4-creating-a-development-version)
+- [Restoring Execution Mode](#restoring-execution-mode)
+- [Safety Tips](#safety-tips)
+- [Troubleshooting](#troubleshooting)
+
+## Introduction
+
+The BadUSB project based on Raspberry Pi Pico 2 W runs Python code that emulates keyboard inputs. When you connect the device to a computer, the `code.py` file executes automatically, which could trigger unintended keyboard commands. Safely editing this file is crucial to prevent accidental execution.
+
+## The Risk of Direct Editing
+
+When directly editing `code.py`, you risk:
+- Automatic execution of keyboard commands upon connection
+- Potential system disruption if commands access sensitive areas
+- Loss of control over your computer if malicious code executes
+
+
+## Method 1: Disabling Automatic Execution
+
+You can temporarily modify the `boot.py` file to prevent automatic execution:
+
+1. Enter BOOTSEL mode as described above
+2. Open the `boot.py` file
+3. Comment out the HID keyboard activation code:
+   ```python
+   # Comment out these lines to disable keyboard simulation
+   # usb_cdc.disable()
+   # storage.disable_usb_drive()
+   ```
+4. Add this line to enable USB drive mode:
+   ```python
+   storage.enable_usb_drive()
+   ```
+5. Save the changes and safely eject
+6. Now when you connect the Pico normally, it will mount as a storage device
+7. Edit `code.py` as needed
+8. Remember to revert `boot.py` changes when finished
+
+
+## Safety Tips
+
+- Always edit BadUSB code in an isolated environment
+- Consider using a virtual machine for testing
+- Create backups of functional code before making changes
+- Test on a non-essential computer (VM)
+- Add comments in your code for easier future editing
+- Consider adding a deliberate delay at the beginning of your scripts
+
+## Troubleshooting
+
+**The device won't mount in BOOTSEL mode:**
+- Make sure you're pressing the button before and during connection
+- Try a different USB cable
+- Check if another program is claiming the device
+
+**Code still executes after modifications:**
+- Ensure you saved all changes
+- Check for any secondary execution paths
+- Verify boot.py modifications were saved properly
+- Try a full device reset (hold BOOTSEL and press RESET)
+
+
+
+
 ## 💻 Using the Controller
 
 ### Web Interface
@@ -408,6 +482,11 @@ ENTER
 ```
 ### Common issues
 
+**Can't access web interface:**
+- Verify WiFi connection settings in the code
+- Check network connectivity
+- Try accessing through IP address directly
+  
 ## Bug: CHAR_DELAY should have a minimum of 30ms to prevent data loss in BadUSB payloads
 
 ### Description
@@ -473,8 +552,6 @@ ENTER
 ### Priority
 Medium-High: This affects the core functionality of the BadUSB controller
 
-### Tags
-`bug`, `reliability`, `payload-execution`, `user-experience`
 
 ## Best Practices for Operational Security
 
