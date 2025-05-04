@@ -223,7 +223,7 @@ REM This is a comment
 DELAY 1000             // Wait for 1000ms
 STRING echo "Hello"    // Type the text literally
 ENTER                  // Press the Enter key
-CTRL ALT DELETE        // Press key combination (space-separated)
+CTRL+ALT+DELETE        // Press key combination (space-separated)
 CTRL+ALT+T             // Alternative combination syntax
 CHAR_DELAY 50          // Set delay between keystrokes to 50ms
 ```
