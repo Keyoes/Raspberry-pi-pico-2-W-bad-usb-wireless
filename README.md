@@ -55,7 +55,7 @@ After a brief pause, it will remount as "RPI-RP2" again, ready for new firmware
 
 ### Step 3: Install Required Libraries
 
-1. Download the CircuitPython library bundle that matches your CircuitPython version from the [CircuitPython libraries page](https://circuitpython.org/libraries)
+1. Download the CircuitPython library bundle that matches your CircuitPython version from the [CircuitPython libraries page](https://circuitpython.org/libraries) (9.2.7 or latest)
 2. Extract the bundle and copy the following libraries to the `lib` folder on your CIRCUITPY drive:
    - adafruit_hid (its a folder)
    - adafruit_httpserver (its a folder)
