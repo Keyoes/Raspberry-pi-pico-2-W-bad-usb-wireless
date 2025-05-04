@@ -30,6 +30,8 @@ Before getting started, you'll need:
 - Micro USB cable
 - Computer with CircuitPython installation capability
 
+### KEYBOARD SUPPORT EN (SUA)
+
 ## 🛠️ Installation Guide
 
 ### Step 1: Flash CircuitPython to your Pico
