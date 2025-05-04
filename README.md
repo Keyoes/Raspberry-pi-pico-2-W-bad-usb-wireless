@@ -453,47 +453,6 @@ elif command == "CHAR_DELAY":
 2. Execute the payload with default CHAR_DELAY (10ms)
 3. Observe incomplete or failed command execution on target system
 
-### Proposed Fix
-1. Increase the default CHAR_DELAY to 30ms minimum:
-```python
-# Setăm un delay de bază între caractere pentru scrierea de text
-char_delay = 0.03  # 30ms între caractere (changed from 10ms)
-```
-
-2. Add validation to enforce a minimum value when users set CHAR_DELAY:
-```python
-elif command == "CHAR_DELAY":
-    if len(parts) > 1:
-        try:
-            requested_delay = float(parts[1])
-            if requested_delay < 30:
-                print(f"Warning: CHAR_DELAY below 30ms may cause reliability issues")
-                print(f"Automatically adjusting to minimum recommended value (30ms)")
-                requested_delay = 30
-            char_delay = requested_delay / 1000.0  # conversia din ms în secunde
-            print(f"Character delay set to {char_delay}s")
-        except ValueError:
-            print(f"Invalid CHAR_DELAY value: {parts[1]}")
-```
-
-3. Update the web interface to include guidance (in the terminal-window section):
-```html
-<div class="terminal-editor">
-    <textarea id="script" placeholder="Type here ... Use CHAR_DELAY 30 or higher for reliable payload execution"></textarea>
-    <div class="delay-hint">Tip: Add 'CHAR_DELAY 30' at the start of your script for reliable execution</div>
-</div>
-```
-
-4. Add CSS for the hint:
-```css
-.delay-hint {
-    color: #0abab5;
-    font-size: 12px;
-    padding: 5px;
-    border-top: 1px dashed var(--kali-border);
-    margin-top: 5px;
-}
-```
 
 ### Example Script with Fix
 ```
