@@ -11,7 +11,7 @@ A powerful BadUSB controller for Raspberry Pi Pico 2 W with a web interface for 
 </p>
 
 
-#### KEYBOARD SUPPORT EN (SUA)
+##### KEYBOARD SUPPORT EN (SUA)
 
 
 ## 🔥 Features
