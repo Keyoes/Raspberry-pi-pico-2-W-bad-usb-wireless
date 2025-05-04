@@ -25,7 +25,16 @@ Before getting started, you'll need:
 Removing Existing Firmware ex(MicroPython)
 If your Raspberry Pi Pico 2 W already has MicroPython, FlashNuke, or other firmware installed, you should remove it first:
 
-Download the Raspberry Pi Pico Flash Reset tool (flash_nuke.uf2)
+Download the Raspberry Pi Pico 2 W
+
+
+
+
+
+
+
+
+Flash Reset tool (flash_nuke.uf2)
 Press and hold the BOOTSEL button on your Raspberry Pi Pico 2 W
 While holding the button, connect the Pico to your computer via USB
 Release the button once connected
