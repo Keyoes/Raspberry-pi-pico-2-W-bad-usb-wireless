@@ -1,5 +1,180 @@
 # KEYOES BadUSB Controller
 
+A powerful BadUSB controller for Raspberry Pi Pico 2 W with a web interface for remote payload management.
+
+![KEYOES BadUSB Controller](https://via.placeholder.com/800x400?text=KEYOES+BadUSB+Controller)
+
+## 🔥 Features
+
+- **Web-based interface** for uploading and executing BadUSB payloads
+- **Wifi connectivity** for remote control
+- **Enhanced keyboard simulation** with improved timing
+- **Command history** and payload logging
+- **Fully responsive UI** with Kali Linux-inspired terminal design
+- **RESTful API** for programmatic control
+
+## 📋 Prerequisites
+
+Before getting started, you'll need:
+
+- Raspberry Pi Pico 2 W
+- Micro USB cable
+- Computer with CircuitPython installation capability
+
+## 🛠️ Installation Guide
+
+### Step 1: Flash CircuitPython to your Pico
+
+1. Press and hold the **BOOTSEL** button on your Raspberry Pi Pico 2 W
+2. While holding the button, connect the Pico to your computer via USB
+3. Release the button once connected
+4. Your Pico should mount as a USB drive named "RPI-RP2"
+5. Download the latest [CircuitPython UF2 file for Raspberry Pi Pico W](https://circuitpython.org/board/raspberry_pi_pico_w/)
+6. Drag and drop the .UF2 file onto the RPI-RP2 drive
+7. The Pico will automatically restart and mount as a new drive named "CIRCUITPY"
+
+### Step 2: Install Required Libraries
+
+1. Download the CircuitPython library bundle that matches your CircuitPython version from the [CircuitPython libraries page](https://circuitpython.org/libraries)
+2. Extract the bundle and copy the following libraries to the `lib` folder on your CIRCUITPY drive:
+   - adafruit_hid
+   - adafruit_httpserver
+   - wifi.py
+   - socketpool.py
+   - ssl.py
+
+### Step 3: Copy the Code Files
+
+1. Create `boot.py` in the root of your CIRCUITPY drive and paste the following code:
+
+```python
+# boot.py - Rulează la pornirea dispozitivului pentru a configura USB HID
+
+import storage
+import usb_cdc
+import usb_hid
+import board
+import digitalio
+import time
+
+# Configurare LED pentru a indica statusul la inițializare
+led = digitalio.DigitalInOut(board.LED)
+led.direction = digitalio.Direction.OUTPUT
+
+# Aprinde LED-ul pentru a indica că boot.py se execută
+led.value = True
+
+# Activăm modul USB HID pentru a permite Pico să se comporte ca o tastatură
+usb_cdc.disable()  # Dezactivăm consola serială pentru a evita conflicte
+storage.disable_usb_drive()  # Dezactivăm modul de stocare USB
+
+# Stingem LED-ul pentru a indica finalizarea configurării
+led.value = False
+
+# Un blink scurt pentru a confirma că boot.py s-a executat cu succes
+time.sleep(0.2)
+led.value = True
+time.sleep(0.2)
+led.value = False
+```
+
+2. Create `code.py` in the root of your CIRCUITPY drive and paste the code from [code.py](code.py)
+
+3. Edit the WiFi credentials in `code.py`:
+   ```python
+   # Parametri WiFi - schimbați cu datele voastre
+   WIFI_SSID = "YourWiFiName"
+   WIFI_PASSWORD = "YourWiFiPassword"
+   ```
+
+### Step 4: Safe Ejection and First Boot
+
+1. Safely eject your CIRCUITPY drive
+2. Disconnect and reconnect your Pico
+3. The device will boot and run the BadUSB controller script
+
+#### LED Status Indicators
+- **3 quick blinks at start**: System initialization
+- **Rapid blinking (10 times)**: WiFi connection failed
+- **One long blink**: Server started successfully
+- **5 quick blinks**: Server failed to start
+- **LED on during command execution**: Command being executed
+
+## 📱 Connecting to the Web Interface
+
+1. Connect your Raspberry Pi Pico 2 W to a USB power source
+2. The device will connect to your configured WiFi network
+3. Find the IP address of your device:
+   - Check your router's connected devices list
+   - Use an IP scanner on your network
+4. Open a web browser and navigate to the IP address (e.g., `http://192.168.1.100`)
+5. The KEYOES BadUSB Controller interface should load
+
+## 💻 Using the Controller
+
+### Web Interface
+
+The web interface provides a terminal-like experience with the following features:
+
+- **Script Editor**: Write or paste your BadUSB scripts
+- **Upload Button**: Saves the script to the device
+- **Execute Button**: Runs the saved script
+- **Clear Button**: Clears the script editor
+- **Command History**: Shows previous commands and their status
+- **Payloads Log**: Records executed payloads (accessed by clicking the "Payloads Log" tab)
+
+### Script Syntax
+
+The BadUSB controller supports the following commands:
+
+```
+STRING <text>           # Types the specified text
+DELAY <milliseconds>    # Waits for the specified time in milliseconds
+CHAR_DELAY <ms>         # Sets the delay between keystrokes (default: 10ms)
+REM <comment>           # Comment (not executed)
+// <comment>            # Alternative comment syntax
+
+# Key commands
+<key>                   # Presses a single key (e.g., ENTER, SPACE, TAB)
+<key1>+<key2>+<key3>    # Presses a key combination (e.g., CTRL+ALT+T)
+```
+
+Example script:
+```
+REM Open command prompt in Windows
+GUI r
+DELAY 500
+STRING cmd
+ENTER
+DELAY 1000
+STRING echo Hello, this is a BadUSB example!
+ENTER
+```
+
+### API Access
+
+For programmatic control, you can use the API endpoint:
+
+```
+POST http://<pico-ip>/api/badusb
+```
+
+With JSON payload:
+```json
+{
+  "action": "upload",
+  "script": "STRING Hello World\nDELAY 500\nENTER"
+}
+```
+
+Or:
+```json
+{
+  "action": "execute"
+}
+```
+
+KEYOES BadUSB Controller
 
 A sophisticated BadUSB implementation leveraging the Raspberry Pi Pico 2 W microcontroller, offering remote execution capabilities through an intuitive web interface inspired by the Kali Linux terminal aesthetic.
 
