@@ -11,6 +11,9 @@ A powerful BadUSB controller for Raspberry Pi Pico 2 W with a web interface for 
 </p>
 
 
+#### KEYBOARD SUPPORT EN (SUA)
+
+
 ## 🔥 Features
 
 - **Web-based interface** for uploading and executing BadUSB payloads
@@ -30,7 +33,7 @@ Before getting started, you'll need:
 - Micro USB cable
 - Computer with CircuitPython installation capability
 
-### KEYBOARD SUPPORT EN (SUA)
+
 
 ## 🛠️ Installation Guide
 
