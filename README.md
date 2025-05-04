@@ -36,14 +36,7 @@ Before getting started, you'll need:
 Removing Existing Firmware ex(MicroPython)
 If your Raspberry Pi Pico 2 W already has MicroPython, FlashNuke, or other firmware installed, you should remove it first:
 
-Download the Raspberry Pi Pico 2 W
-
-
-
-
-
-
-
+## Download the Raspberry Pi Pico 2 W
 
 Flash Reset tool (flash_nuke.uf2)
 Press and hold the BOOTSEL button on your Raspberry Pi Pico 2 W
@@ -73,6 +66,7 @@ After a brief pause, it will remount as "RPI-RP2" again, ready for new firmware
    - adafruit_request.mpy
    - adafruit_ticks.mpy
    - ducky_interpreter.py
+   - adafruit_connection_manager.mpy
 
 ### Step 4: Copy the Code Files
 
