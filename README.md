@@ -125,15 +125,6 @@ led.value = False
 - **5 quick blinks**: Server failed to start
 - **LED on during command execution**: Command being executed
 
-## 📱 Connecting to the Web Interface
-
-1. Connect your Raspberry Pi Pico 2 W to a USB power source
-2. The device will connect to your configured WiFi network
-3. Find the IP address of your device:
-   - Check your router's connected devices list
-   - Use an IP scanner on your network
-4. Open a web browser and navigate to the IP address (e.g., `http://192.168.1.100`)
-5. The KEYOES BadUSB Controller interface should load
 
 # Safely Editing BadUSB Python Code (code.py)
 
@@ -203,6 +194,15 @@ You can temporarily modify the `boot.py` file to prevent automatic execution:
 - Try a full device reset (hold BOOTSEL and press RESET)
 
 
+## 📱 Connecting to the Web Interface
+
+1. Connect your Raspberry Pi Pico 2 W to a USB power source
+2. The device will connect to your configured WiFi network
+3. Find the IP address of your device:
+   - Check your router's connected devices list
+   - Use an IP scanner on your network
+4. Open a web browser and navigate to the IP address (e.g., `http://192.168.1.100`)
+5. The KEYOES BadUSB Controller interface should load
 
 
 ## 💻 Using the Controller
