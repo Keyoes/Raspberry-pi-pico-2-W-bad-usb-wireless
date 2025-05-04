@@ -415,7 +415,7 @@ response = requests.post("http://[DEVICE_IP]/api/badusb", json=command)
 print(response.json())
 ```
 
-#### API Endpoints (NOT TESTED YET )
+#### API Endpoints
 
 | Endpoint       | Method     | Description                      |
 |----------------|------------|----------------------------------|
