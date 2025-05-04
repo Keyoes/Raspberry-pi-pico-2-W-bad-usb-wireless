@@ -5,7 +5,7 @@ A powerful BadUSB controller for Raspberry Pi Pico 2 W with a web interface for 
 ### Desktop Interface
 ![Desktop Interface](https://github.com/Keyoes/Raspberry-pi-pico-2-W-bad-usb-wireless/blob/43745d29862eea24b3e412d9aa0729e02f7de1c4/desktop.png)
 
-### Mobile Interface (iPhone/iOS)
+### Mobile Interface (Samsung/ANDROID -- iPhone/iOS)
 <p align="center">
   <img src="https://github.com/Keyoes/Raspberry-pi-pico-2-W-bad-usb-wireless/blob/c162099be92f641ecbc848885c718d8e7cdb4dfb/mobile.jpg" alt="Descriere" width="300"/>
 </p>
@@ -15,7 +15,7 @@ A powerful BadUSB controller for Raspberry Pi Pico 2 W with a web interface for 
 
 - **Web-based interface** for uploading and executing BadUSB payloads
 - **Wifi connectivity** for remote control
-- **Mobile-Optimized**: Fully responsive design works perfectly on iPhone, iOS devices, and all mobile platforms
+- **Mobile-Optimized**: Fully responsive design works perfectly on Samsung, iPhone, and all mobile platforms
 - **Desktop Compatible**: Seamless experience on laptops and desktop computers
 - **Enhanced keyboard simulation** with improved timing
 - **Command history** and payload logging
