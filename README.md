@@ -40,7 +40,7 @@ After a brief pause, it will remount as "RPI-RP2" again, ready for new firmware
 2. While holding the button, connect the Pico to your computer via USB
 3. Release the button once connected
 4. Your Pico should mount as a USB drive named "RPI-RP2"
-5. Download the latest [CircuitPython UF2 file for Raspberry Pi Pico W](https://circuitpython.org/board/raspberry_pi_pico2_w/)
+5. Download the latest [CircuitPython UF2 file for Raspberry Pi Pico 2 W](https://circuitpython.org/board/raspberry_pi_pico2_w/)
 6. Drag and drop the .UF2 file onto the RPI-RP2 drive
 7. The Pico will automatically restart and mount as a new drive named "CIRCUITPY"
 
