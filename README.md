@@ -2,8 +2,6 @@
 
 A powerful BadUSB controller for Raspberry Pi Pico 2 W with a web interface for remote payload management.
 
-![KEYOES BadUSB Controller](https://via.placeholder.com/800x400?text=KEYOES+BadUSB+Controller)
-
 ## 🔥 Features
 
 - **Web-based interface** for uploading and executing BadUSB payloads
@@ -23,7 +21,20 @@ Before getting started, you'll need:
 
 ## 🛠️ Installation Guide
 
-### Step 1: Flash CircuitPython to your Pico
+Step 1: Flash CircuitPython to your Pico
+Removing Existing Firmware ex(MicroPython)
+If your Raspberry Pi Pico 2 W already has MicroPython, FlashNuke, or other firmware installed, you should remove it first:
+
+Download the Raspberry Pi Pico Flash Reset tool (flash_nuke.uf2)
+Press and hold the BOOTSEL button on your Raspberry Pi Pico 2 W
+While holding the button, connect the Pico to your computer via USB
+Release the button once connected
+Your Pico should mount as a USB drive named "RPI-RP2"
+Drag and drop the flash_nuke.uf2 file onto the RPI-RP2 drive
+The Pico will automatically restart, erasing its memory completely
+After a brief pause, it will remount as "RPI-RP2" again, ready for new firmware
+
+### Step 2: Flash CircuitPython to your Pico
 
 1. Press and hold the **BOOTSEL** button on your Raspberry Pi Pico 2 W
 2. While holding the button, connect the Pico to your computer via USB
@@ -33,7 +44,7 @@ Before getting started, you'll need:
 6. Drag and drop the .UF2 file onto the RPI-RP2 drive
 7. The Pico will automatically restart and mount as a new drive named "CIRCUITPY"
 
-### Step 2: Install Required Libraries
+### Step 3: Install Required Libraries
 
 1. Download the CircuitPython library bundle that matches your CircuitPython version from the [CircuitPython libraries page](https://circuitpython.org/libraries)
 2. Extract the bundle and copy the following libraries to the `lib` folder on your CIRCUITPY drive:
@@ -43,7 +54,7 @@ Before getting started, you'll need:
    - adafruit_ticks.mpy
    - ducky_interpreter.py
 
-### Step 3: Copy the Code Files
+### Step 4: Copy the Code Files
 
 1. Create `boot.py` in the root of your CIRCUITPY drive and paste the following code:
 
