@@ -408,12 +408,15 @@ ENTER
 ```
 ### Common issues
 
-Bug: CHAR_DELAY should have a minimum of 30ms to prevent data loss in BadUSB payloads
-Description
-When executing BadUSB payloads through the Keyoes controller, we've discovered that the current default character delay of 10ms (char_delay = 0.01 in the code) causes significant reliability issues. Characters are frequently dropped or misinterpreted during payload execution, especially with longer commands or when targeting systems under load.
-Current Implementation
-In the current code (execute_script() function), we have:
-python# Setăm un delay de bază între caractere pentru scrierea de text
+## Bug: CHAR_DELAY should have a minimum of 30ms to prevent data loss in BadUSB payloads
+
+### Description
+When executing BadUSB payloads through the Keyoes controller, we've discovered that the current default character delay of 10ms (`char_delay = 0.01` in the code) causes significant reliability issues. Characters are frequently dropped or misinterpreted during payload execution, especially with longer commands or when targeting systems under load.
+
+### Current Implementation
+In the current code (`execute_script()` function), we have:
+```python
+# Setăm un delay de bază între caractere pentru scrierea de text
 char_delay = 0.01  # 10ms între caractere
 
 for line in script_lines:
@@ -425,8 +428,11 @@ for line in script_lines:
             for char in text:
                 keyboard_layout.write(char)
                 time.sleep(char_delay)  # Delay între caractere
-The CHAR_DELAY command exists, but there's no warning or minimum value enforcement:
-pythonelif command == "CHAR_DELAY":
+```
+
+The `CHAR_DELAY` command exists, but there's no warning or minimum value enforcement:
+```python
+elif command == "CHAR_DELAY":
     # Comandă nouă pentru a schimba delay-ul dintre caractere
     if len(parts) > 1:
         try:
@@ -434,29 +440,29 @@ pythonelif command == "CHAR_DELAY":
             print(f"Character delay set to {char_delay}s")
         except ValueError:
             print(f"Invalid CHAR_DELAY value: {parts[1]}")
-Problem Details
+```
 
-Target systems miss keystrokes during rapid typing sequences
-Special characters and complex commands often fail to register properly
-Payloads fail silently with no indication of character loss
-The web interface doesn't provide guidance on appropriate CHAR_DELAY values
+### Problem Details
+1. Target systems miss keystrokes during rapid typing sequences
+2. Special characters and complex commands often fail to register properly
+3. Payloads fail silently with no indication of character loss
+4. The web interface doesn't provide guidance on appropriate CHAR_DELAY values
 
-Steps to Reproduce
+### Steps to Reproduce
+1. Upload a complex payload with long STRING commands
+2. Execute the payload with default CHAR_DELAY (10ms)
+3. Observe incomplete or failed command execution on target system
 
-Upload a complex payload with long STRING commands
-Execute the payload with default CHAR_DELAY (10ms)
-Observe incomplete or failed command execution on target system
-
-Proposed Fix
-
-Increase the default CHAR_DELAY to 30ms minimum:
-
-python# Setăm un delay de bază între caractere pentru scrierea de text
+### Proposed Fix
+1. Increase the default CHAR_DELAY to 30ms minimum:
+```python
+# Setăm un delay de bază între caractere pentru scrierea de text
 char_delay = 0.03  # 30ms între caractere (changed from 10ms)
+```
 
-Add validation to enforce a minimum value when users set CHAR_DELAY:
-
-pythonelif command == "CHAR_DELAY":
+2. Add validation to enforce a minimum value when users set CHAR_DELAY:
+```python
+elif command == "CHAR_DELAY":
     if len(parts) > 1:
         try:
             requested_delay = float(parts[1])
@@ -468,39 +474,49 @@ pythonelif command == "CHAR_DELAY":
             print(f"Character delay set to {char_delay}s")
         except ValueError:
             print(f"Invalid CHAR_DELAY value: {parts[1]}")
+```
 
-Update the web interface to include guidance (in the terminal-window section):
-
-html<div class="terminal-editor">
+3. Update the web interface to include guidance (in the terminal-window section):
+```html
+<div class="terminal-editor">
     <textarea id="script" placeholder="Type here ... Use CHAR_DELAY 30 or higher for reliable payload execution"></textarea>
     <div class="delay-hint">Tip: Add 'CHAR_DELAY 30' at the start of your script for reliable execution</div>
 </div>
+```
 
-Add CSS for the hint:
-
-css.delay-hint {
+4. Add CSS for the hint:
+```css
+.delay-hint {
     color: #0abab5;
     font-size: 12px;
     padding: 5px;
     border-top: 1px dashed var(--kali-border);
     margin-top: 5px;
 }
-Example Script with Fix
+```
+
+### Example Script with Fix
+```
 REM Reliable payload with proper delay
 CHAR_DELAY 30
 STRING powershell -NoP -NonI -W Hidden -Exec Bypass -Command "Start-Process cmd -Verb RunAs"
 DELAY 1000
 STRING Y
 ENTER
-Impact
+```
 
-More reliable payload execution across all target systems
-Fewer failed attacks due to dropped keystrokes
-Better user experience with clearer guidance
-No significant performance impact (20ms additional delay per character is negligible compared to failed execution)
+### Impact
+- More reliable payload execution across all target systems
+- Fewer failed attacks due to dropped keystrokes
+- Better user experience with clearer guidance
+- No significant performance impact (20ms additional delay per character is negligible compared to failed execution)
 
-Priority
+### Priority
 Medium-High: This affects the core functionality of the BadUSB controller
+
+### Tags
+`bug`, `reliability`, `payload-execution`, `user-experience`
+
 ## Best Practices for Operational Security
 
 When utilizing this controller for legitimate security testing:
