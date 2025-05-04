@@ -1,11 +1,11 @@
 # KEYOES BadUSB Controller
 
 
-A sophisticated BadUSB implementation leveraging the Raspberry Pi Pico W microcontroller, offering remote execution capabilities through an intuitive web interface inspired by the Kali Linux terminal aesthetic.
+A sophisticated BadUSB implementation leveraging the Raspberry Pi Pico 2 W microcontroller, offering remote execution capabilities through an intuitive web interface inspired by the Kali Linux terminal aesthetic.
 
 ## Overview
 
-KEYOES BadUSB Controller transforms your Raspberry Pi Pico W into a versatile Human Interface Device (HID) that can be remotely controlled over Wi-Fi. This project implements a complete attack framework for security testing and administrative task automation, featuring real-time monitoring, payload management, and comprehensive API access.
+KEYOES BadUSB Controller transforms your Raspberry Pi Pico 2 W into a versatile Human Interface Device (HID) that can be remotely controlled over Wi-Fi. This project implements a complete attack framework for security testing and administrative task automation, featuring real-time monitoring, payload management, and comprehensive API access.
 
 ## Features
 
