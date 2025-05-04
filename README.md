@@ -29,7 +29,7 @@ Before getting started, you'll need:
 2. While holding the button, connect the Pico to your computer via USB
 3. Release the button once connected
 4. Your Pico should mount as a USB drive named "RPI-RP2"
-5. Download the latest [CircuitPython UF2 file for Raspberry Pi Pico W](https://circuitpython.org/board/raspberry_pi_pico_w/)
+5. Download the latest [CircuitPython UF2 file for Raspberry Pi Pico W](https://circuitpython.org/board/raspberry_pi_pico2_w/)
 6. Drag and drop the .UF2 file onto the RPI-RP2 drive
 7. The Pico will automatically restart and mount as a new drive named "CIRCUITPY"
 
@@ -37,11 +37,11 @@ Before getting started, you'll need:
 
 1. Download the CircuitPython library bundle that matches your CircuitPython version from the [CircuitPython libraries page](https://circuitpython.org/libraries)
 2. Extract the bundle and copy the following libraries to the `lib` folder on your CIRCUITPY drive:
-   - adafruit_hid
-   - adafruit_httpserver
-   - wifi.py
-   - socketpool.py
-   - ssl.py
+   - adafruit_hid (its a folder)
+   - adafruit_httpserver (its a folder)
+   - adafruit_request.mpy
+   - adafruit_ticks.mpy
+   - ducky_interpreter.py
 
 ### Step 3: Copy the Code Files
 
