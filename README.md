@@ -142,11 +142,7 @@ This guide explains how to safely edit the `code.py` file for your Raspberry Pi 
 ## Table of Contents
 - [Introduction](#introduction)
 - [The Risk of Direct Editing](#the-risk-of-direct-editing)
-- [Method 1: Using BOOTSEL Mode](#method-1-using-bootsel-mode)
-- [Method 2: Disabling Automatic Execution](#method-2-disabling-automatic-execution)
-- [Method 3: Web Interface Editing](#method-3-web-interface-editing)
-- [Method 4: Creating a Development Version](#method-4-creating-a-development-version)
-- [Restoring Execution Mode](#restoring-execution-mode)
+- [Method : Disabling Automatic Execution](#method-2-disabling-automatic-execution)
 - [Safety Tips](#safety-tips)
 - [Troubleshooting](#troubleshooting)
 
