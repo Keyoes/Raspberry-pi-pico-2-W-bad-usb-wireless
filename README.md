@@ -142,7 +142,7 @@ REM <comment>           # Comment (not executed)
 Example script:
 ```
 REM Open command prompt in Windows
-GUI r
+GUI+r
 DELAY 500
 STRING cmd
 ENTER
