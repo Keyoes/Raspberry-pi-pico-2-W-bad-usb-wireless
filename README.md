@@ -489,7 +489,7 @@ ENTER
 ## Bug: CHAR_DELAY should have a minimum of 30ms to prevent data loss in BadUSB payloads
 
 ### Description
-When executing BadUSB payloads through the Keyoes controller, we've discovered that the current default character delay of 10ms (`char_delay = 0.01` in the code) causes significant reliability issues. Characters are frequently dropped or misinterpreted during payload execution, especially with longer commands or when targeting systems under load.
+When executing BadUSB payloads through the Keyoes controller, I discovered that the current default character delay of 10ms (`char_delay = 0.01` in the code) causes significant reliability issues. Characters are frequently dropped or misinterpreted during payload execution, especially with longer commands or when targeting systems under load.
 
 ### Current Implementation
 In the current code (`execute_script()` function), we have:
