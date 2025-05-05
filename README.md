@@ -249,7 +249,7 @@ STRING echo Hello, this is a BadUSB example!
 ENTER
 ```
 
-### API Access (NOT TESTED YET)
+### API Access 
 
 For programmatic control, you can use the API endpoint:
 
