@@ -29,8 +29,8 @@ for _ in range(3):
     time.sleep(0.2)
 
 # Parametri WiFi - schimbați cu datele voastre
-WIFI_SSID = "Test1234"
-WIFI_PASSWORD = "parola1234"
+WIFI_SSID = "YourWiFiName"
+WIFI_PASSWORD = "YourWiFiPassword"
 
 # Path pentru fișierul cu scriptul Bad USB
 SCRIPT_PATH = "/badusb_script.txt"
