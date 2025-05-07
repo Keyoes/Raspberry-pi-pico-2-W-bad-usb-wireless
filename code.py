@@ -29,8 +29,8 @@ for _ in range(3):
     time.sleep(0.2)
 
 # Parametri WiFi - schimbați cu datele voastre
-WIFI_SSID = "YourWiFiName"
-WIFI_PASSWORD = "YourWiFiPassword"
+WIFI_SSID = "Test1234"
+WIFI_PASSWORD = "parola1234"
 
 # Path pentru fișierul cu scriptul Bad USB
 SCRIPT_PATH = "/badusb_script.txt"
@@ -107,22 +107,147 @@ KEY_MAPPING = {
     "Z": Keycode.Z
 }
 
-# Inițializare tastatură HID
-keyboard = Keyboard(usb_hid.devices)
+# Inițializare tastatură HID - folosind dispozitivul nostru custom fără nume
+keyboard = Keyboard(usb_hid.devices[0])
 keyboard_layout = KeyboardLayoutUS(keyboard)
 
-def connect_to_wifi():
-    """Conectare la rețeaua WiFi configurată"""
-    print(f"Connecting to {WIFI_SSID}...")
-    try:
-        wifi.radio.connect(WIFI_SSID, WIFI_PASSWORD)
-        print(f"Connected to {WIFI_SSID}")
-        print(f"IP Address: {wifi.radio.ipv4_address}")
-        return True
-    except Exception as e:
-        print(f"Failed to connect to WiFi: {e}")
-        return False
+def check_wifi_connection():
+    """Verifică starea conexiunii WiFi și încearcă reconectarea dacă este necesară"""
+    if not wifi.radio.connected:
+        print("WiFi connection lost. Attempting to reconnect...")
+        connect_to_wifi()  # Această funcție va încerca până reușește
+        return wifi.radio.connected
+    return True  # Conexiunea este activă
 
+def connect_to_wifi():
+    """Conectare la rețeaua WiFi configurată cu încercări repetate"""
+    max_attempts = 10  # Numărul maxim de încercări înainte de a semnala un eșec temporar
+    retry_delay = 5    # Secunde între încercări
+    attempt = 0
+    
+    while True:  # Buclă infinită pentru a încerca mereu reconectarea
+        attempt += 1
+        print(f"Connecting to {WIFI_SSID}... (Attempt {attempt})")
+        
+        try:
+            # Semnalăm încercarea de conectare cu LED-ul
+            led.value = True
+            time.sleep(0.2)
+            led.value = False
+            
+            # Încercăm să ne conectăm la WiFi
+            wifi.radio.connect(WIFI_SSID, WIFI_PASSWORD)
+            
+            # Dacă ajungem aici, conexiunea a reușit
+            print(f"Connected to {WIFI_SSID}")
+            print(f"IP Address: {wifi.radio.ipv4_address}")
+            
+            # Semnalăm succesul conexiunii cu 2 blink-uri scurte
+            for _ in range(2):
+                led.value = True
+                time.sleep(0.2)
+                led.value = False
+                time.sleep(0.2)
+                
+            return True
+            
+        except Exception as e:
+            print(f"Failed to connect to WiFi: {e}")
+            
+            # Semnalăm eșecul conectării cu un blink lung
+            led.value = True
+            time.sleep(1)
+            led.value = False
+            
+            # Dacă am atins numărul maxim de încercări, semnalăm acest lucru
+            if attempt % max_attempts == 0:
+                print(f"Reached {max_attempts} consecutive failed attempts.")
+                # Semnalăm acest lucru cu 5 blink-uri rapide
+                for _ in range(5):
+                    led.value = True
+                    time.sleep(0.1)
+                    led.value = False
+                    time.sleep(0.1)
+                
+                # Încercăm să restartăm microcontroller-ul dacă conexiunea eșuează în mod repetat
+                try:
+                    microcontroller.reset()
+                except:
+                    pass
+            
+            # Așteptăm înainte de a încerca din nou
+            print(f"Retrying in {retry_delay} seconds...")
+            time.sleep(retry_delay)
+
+def main():
+    """Funcția principală"""
+    # Încercăm să ne conectăm la WiFi până reușim
+    connect_to_wifi()  # Acum această funcție va încerca până reușește
+    
+    # Configurăm și pornim serverul
+    server = setup_server()
+    
+    # Timp pentru ultima verificare a conexiunii
+    last_wifi_check = time.monotonic()
+    wifi_check_interval = 60  # Verifică conexiunea la fiecare 60 secunde
+    
+    if server:
+        # Indicăm că serverul rulează cu success printr-un blink lung
+        led.value = True
+        time.sleep(1)
+        led.value = False
+        
+        try:
+            # Menținem serverul activ
+            while True:
+                try:
+                    server.poll()
+                except Exception as e:
+                    print(f"Error during server poll: {e}")
+                    # Verificăm conexiunea WiFi înainte de a încerca să repornind serverul
+                    if check_wifi_connection():
+                        # Încercăm să restartăm serverul
+                        print("Trying to restart server...")
+                        server = setup_server()
+                        if not server:
+                            # Dacă serverul nu pornește, restartăm dispozitivul
+                            microcontroller.reset()
+                
+                # Verificăm periodic conexiunea WiFi
+                current_time = time.monotonic()
+                if current_time - last_wifi_check > wifi_check_interval:
+                    print("Running scheduled WiFi connection check...")
+                    if not check_wifi_connection():
+                        # Dacă conexiunea WiFi a eșuat, încercăm să repornind serverul după reconectare
+                        print("Server may need restart after WiFi reconnection...")
+                        server = setup_server()
+                        if not server:
+                            # Dacă serverul nu pornește, restartăm dispozitivul
+                            microcontroller.reset()
+                    last_wifi_check = time.monotonic()
+                
+                time.sleep(0.1)  # Mică pauză pentru a preveni utilizarea excesivă a CPU
+                
+        except Exception as e:
+            print(f"Server polling error: {e}")
+            # Verificăm conexiunea înainte de a încerca repornirea
+            check_wifi_connection()
+            # Încercăm să repornm serverul sau restartăm microcontroller-ul
+            try:
+                server = setup_server()
+                if not server:
+                    microcontroller.reset()
+            except:
+                microcontroller.reset()
+    else:
+        # Indicăm că serverul nu a putut porni cu 5 blinkuri rapide
+        for _ in range(5):
+            led.value = True
+            time.sleep(0.1)
+            led.value = False
+            time.sleep(0.1)
+        # Dacă serverul nu pornește după mai multe încercări, restartăm dispozitivul
+        microcontroller.reset()
 def save_script(script_content):
     """Salvează scriptul Bad USB într-un fișier"""
     try:
