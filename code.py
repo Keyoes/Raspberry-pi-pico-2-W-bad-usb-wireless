@@ -865,7 +865,7 @@ def setup_server():
                 </svg>
                 <span class="rgb-text">KEYOES</span>
             </div>
-            <div class="subtitle">Raspberry Evil Controller</div>
+            <div class="subtitle">DO NOT USE FOR MALICIOUS PURPOSES!</div>
         </div>
         <div class="wifi-status">
             <div class="status-indicator status-connected"></div>
