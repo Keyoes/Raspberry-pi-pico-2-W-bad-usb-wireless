@@ -1302,39 +1302,5 @@ window.onload = function() {
     except Exception as e:
         print(f"Server error: {e}")
         return None
-def main():
-    """Funcția principală"""
-    if not connect_to_wifi():
-        # Dacă conectarea la WiFi eșuează, facem blink cu LED-ul rapid de 10 ori
-        for _ in range(10):
-            led.value = True
-            time.sleep(0.1)
-            led.value = False
-            time.sleep(0.1)
-        return
-    
-    # Configurăm și pornim serverul
-    server = setup_server()
-    
-    if server:
-        # Indicăm că serverul rulează cu success printr-un blink lung
-        led.value = True
-        time.sleep(1)
-        led.value = False
-        
-        try:
-            # Menținem serverul activ
-            while True:
-                server.poll()
-        except Exception as e:
-            print(f"Server polling error: {e}")
-    else:
-        # Indicăm că serverul nu a putut porni cu 5 blinkuri rapide
-        for _ in range(5):
-            led.value = True
-            time.sleep(0.1)
-            led.value = False
-            time.sleep(0.1)
-
 if __name__ == "__main__":
     main()
