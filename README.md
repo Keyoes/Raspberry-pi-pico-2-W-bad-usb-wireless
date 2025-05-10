@@ -11,6 +11,7 @@ A powerful BadUSB controller for Raspberry Pi Pico 2 W with a web interface for 
 
 - **Web-based interface** for uploading and executing BadUSB payloads
 - **Wifi connectivity** for remote control
+- **You can plug it and walk away**  The raspberry pi pico 2 W will try to connect always to your wifi if the conection is lost 
 - **Mobile-Optimized**: Fully responsive design works perfectly on Samsung, iPhone, and all mobile platforms
 - **Desktop Compatible**: Seamless experience on laptops and desktop computers
 - **Enhanced keyboard simulation** with improved timing
