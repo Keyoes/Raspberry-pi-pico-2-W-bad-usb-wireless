@@ -17,8 +17,8 @@ for _ in range(3):
     led.value = False
     time.sleep(0.2)
 
-WIFI_SSID = "Test1234"
-WIFI_PASSWORD = "parola1234"
+WIFI_SSID = "YourWiFiName"
+WIFI_PASSWORD = "YourWiFiPassword"
 SCRIPT_PATH = "/badusb_script.txt"
 
 KEY_MAPPING = {
