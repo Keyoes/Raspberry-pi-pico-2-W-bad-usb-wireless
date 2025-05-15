@@ -239,7 +239,6 @@ def setup_server():
     
     @server.route("/", httpmethods.GET)
     def base(request):
-        # HTML pentru pagina principală (codul HTML este prea lung pentru a-l afișa complet aici)
         html = """<!DOCTYPE html>
 <html>
 <head>
