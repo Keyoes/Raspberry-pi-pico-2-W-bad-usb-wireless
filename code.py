@@ -893,8 +893,7 @@ def setup_server():
                     </div>
                 </div>
                 <div class="terminal-editor">
-                    <textarea id="script" placeholder="Type here ...`
-"></textarea>
+                    <textarea id="script" placeholder="Type here ..."></textarea>
                 </div>
             </div>
             
