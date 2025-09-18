@@ -768,35 +768,7 @@ def setup_server():
                 </div>
             </div>
             <div class="terminal-editor">
-                <textarea id="script" placeholder="REM KEYOES BadUSB Enhanced with Advanced Mouse
-REM
-REM Timing Commands:
-REM CHAR_DELAY 30        # Affects keyboard AND mouse (30ms)
-REM MOUSE_SPEED 1.5      # Mouse movement speed (1.5x faster)
-REM DELAY 1000           # Wait 1 second
-REM
-REM Keyboard Commands:
-REM STRING Hello World
-REM CTRL+C, ALT+F4, WIN+R
-REM COPY, PASTE, CUT, UNDO
-REM
-REM Mouse Commands:
-REM MOUSE_CLICK LEFT
-REM MOUSE_MOVE 100 50    # Smooth movement with speed control
-REM SCROLL_UP 3          # Gradual scroll
-REM MOUSE_DRAG 200 100   # Speed-controlled drag
-REM
-REM Example with timing:
-CHAR_DELAY 50
-MOUSE_SPEED 0.8
-WIN_R
-DELAY 500
-STRING mspaint
-ENTER
-DELAY 2000
-MOUSE_MOVE 200 200
-MOUSE_CLICK LEFT
-MOUSE_DRAG 100 100"></textarea>
+                <textarea id="script" placeholder="Type here ..."></textarea>
             </div>
         </div>
         
@@ -854,45 +826,7 @@ MOUSE_DRAG 100 100"></textarea>
         }
         
         function showHelp() {
-            alert(`KEYOES BadUSB Enhanced v3.0 - Help
-
-TIMING COMMANDS:
-CHAR_DELAY <ms>        - Set delay for keyboard and mouse
-MOUSE_SPEED <speed>    - Set mouse movement speed (0.1-10.0)
-DELAY <ms>             - Wait specified milliseconds
-
-KEYBOARD COMMANDS:
-STRING <text>          - Type text
-CTRL+C, ALT+F4         - Key combinations
-COPY, PASTE, CUT       - Shortcuts
-WIN_R, WIN_L, ALT_TAB  - System shortcuts
-
-MOUSE COMMANDS:
-MOUSE_CLICK LEFT       - Left click
-MOUSE_CLICK RIGHT      - Right click  
-MOUSE_CLICK MIDDLE     - Middle click
-MOUSE_MOVE x y         - Move cursor (relative, speed controlled)
-SCROLL_UP [amount]     - Scroll up (gradual)
-SCROLL_DOWN [amount]   - Scroll down (gradual)
-MOUSE_PRESS LEFT       - Press and hold
-MOUSE_RELEASE ALL      - Release all buttons
-MOUSE_DRAG x y         - Drag from current position (speed controlled)
-
-COMMENTS:
-REM, #, //             - Comment lines
-
-EXAMPLE:
-REM Open Paint and draw with timing
-CHAR_DELAY 40
-MOUSE_SPEED 1.2
-WIN_R
-DELAY 500  
-STRING mspaint
-ENTER
-DELAY 2000
-MOUSE_MOVE 200 200
-MOUSE_CLICK LEFT
-MOUSE_DRAG 100 100`);
+            alert(`NU ai nevoide de ajutor.Ce-i asta?`);
         }
         
         function checkWifiStatus() {
