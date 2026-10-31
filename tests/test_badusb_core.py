@@ -770,5 +770,54 @@ class TestTypeText(CoreTestCase):
         self.assertEqual(clock["t"], 0.0)
 
 
+class TestHostVerification(CoreTestCase):
+    """USB HID acknowledges nothing, with one exception: the host sends the
+    device its keyboard LED state. Pressing a lock key and watching that
+    come back changed is the only end-to-end proof available that
+    keystrokes are arriving."""
+
+    def configure_with(self, keyboard):
+        stubs.instant_clock(self.core)
+        self.core.configure(
+            ssid="n", password="p", keyboard=keyboard, keyboard_layout=None,
+            key_mapping=stubs.KEY_MAPPING,
+            script_path=os.path.join(self.tmp, "active.txt"),
+            script_dir=os.path.join(self.tmp, "scripts"),
+        )
+        return keyboard
+
+    def test_a_listening_host_is_confirmed(self):
+        self.configure_with(stubs.FakeHostKeyboard(answers=True))
+        ok, detail = self.core.verify_host_link()
+        self.assertTrue(ok, detail)
+
+    def test_the_target_is_left_as_it_was_found(self):
+        keyboard = self.configure_with(stubs.FakeHostKeyboard(answers=True))
+        before = keyboard.led_status
+        self.core.verify_host_link()
+        self.assertEqual(keyboard.led_status, before,
+                         "Num Lock must be pressed back, not left toggled")
+
+    def test_a_silent_host_is_reported_as_a_failure(self):
+        self.configure_with(stubs.FakeHostKeyboard(answers=False))
+        ok, detail = self.core.verify_host_link(timeout=0.05)
+        self.assertFalse(ok)
+        self.assertIn("no response", detail)
+
+    def test_a_keyboard_without_led_state_is_unknown_not_broken(self):
+        """A build that cannot report LED state must not be called a
+        failure; not knowing and knowing it failed are different."""
+        self.configure_with(stubs.FakeKeyboard())
+        ok, detail = self.core.verify_host_link()
+        self.assertIsNone(ok)
+        self.assertIn("LED state", detail)
+
+    def test_the_check_uses_the_ordinary_key_path(self):
+        keyboard = self.configure_with(stubs.FakeHostKeyboard(answers=True))
+        self.core.verify_host_link()
+        self.assertIn(("press", 0x53), [(a, k) for a, k in keyboard.events
+                                        if a == "press"])
+
+
 if __name__ == "__main__":
     unittest.main()

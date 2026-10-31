@@ -565,6 +565,7 @@
             <div class="button-container">
                 <button onclick="checkScript()">CHECK</button>
                 <button onclick="dryRun()">DRY RUN</button>
+                <button onclick="verifyLink()">VERIFY HOST</button>
             </div>
 
             <div class="button-container library-row">
@@ -831,6 +832,36 @@
                 addToHistory("DRY RUN", data.steps.length + " step(s)");
             })
             .catch(error => reportError("DRY RUN", error));
+        }
+
+        // The only acknowledgement USB HID offers is the host's keyboard LED
+        // state. This presses Num Lock, waits for that to come back changed,
+        // and presses it again to put the target back. It is the one way to
+        // tell a working cable from a payload typing into nothing.
+        function verifyLink() {
+            setStatus("Asking the host to confirm a keystroke...");
+
+            fetch('/verify', {method: 'POST'})
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok === true) {
+                    showReport(['<span class="report-ok">Host is receiving '
+                                + 'keystrokes.</span>']);
+                    addToHistory("VERIFY", "success");
+                    return;
+                }
+                if (data.ok === null) {
+                    showReport(['<span class="report-problem">Could not tell: '
+                                + escapeHtml(data.detail) + '</span>']);
+                    addToHistory("VERIFY", "unknown");
+                    return;
+                }
+                showReport(['<span class="report-problem">Host is not '
+                            + 'receiving: ' + escapeHtml(data.detail)
+                            + '</span>']);
+                addToHistory("VERIFY", "failed");
+            })
+            .catch(error => reportError("VERIFY", error));
         }
 
         function refreshScripts() {

@@ -555,6 +555,73 @@ def paced_keyboard(keyboard_class, devices, hold=KEY_HOLD_SECONDS):
     return PacedKeyboard(devices)
 
 
+def usb_host_connected():
+    """Whether a USB host is attached at all.
+
+    Cheap and side-effect free. Without this the device will happily run a
+    payload into thin air -- plugged into a charger, or into nothing -- and
+    report that it executed successfully.
+    """
+    try:
+        import supervisor
+
+        return bool(supervisor.runtime.usb_connected)
+    except (ImportError, AttributeError):
+        # Older builds without the attribute: do not claim it is missing.
+        return None
+
+
+def verify_host_link(timeout=0.5, poll=0.01):
+    """Prove the host is receiving keystrokes, by making it answer one.
+
+    USB HID gives the device no acknowledgement for an ordinary key, but
+    there is one backchannel: the host sends the device its keyboard LED
+    state. Pressing a lock key and watching for that state to come back
+    changed is an end-to-end check -- the host received the key, acted on
+    it, and reported the result.
+
+    Num Lock is used because it is the least disruptive of the three, and
+    it is pressed a second time to put it back, so the target ends as it
+    started. The LED will blink on the user's keyboard; this is a
+    deliberate check, not something to run before every payload.
+
+    Returns (ok, detail). ok is None when the answer cannot be known,
+    which is not the same as False.
+    """
+    if _keyboard is None:
+        return None, "no keyboard configured"
+
+    connected = usb_host_connected()
+    if connected is False:
+        return False, "no USB host attached"
+
+    try:
+        before = _keyboard.led_status
+    except (AttributeError, OSError) as e:
+        return None, f"this build does not report LED state ({e})"
+
+    try:
+        # Keycode 0x53 is Num Lock; pressed through the same path as any
+        # other key so the check exercises what a payload would.
+        _keyboard.press(0x53)
+        _keyboard.release_all()
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if _keyboard.led_status != before:
+                _keyboard.press(0x53)       # put the target back as we found it
+                _keyboard.release_all()
+                return True, "host acknowledged a keystroke"
+            time.sleep(poll)
+
+        return False, (
+            f"no response from the host within {timeout:.1f}s; "
+            "keystrokes are probably not arriving"
+        )
+    except Exception as e:
+        return None, f"could not run the check ({e})"
+
+
 def type_text(text, char_delay, hold=KEY_HOLD_SECONDS):
     """Type text, taking the key hold out of the character delay.
 

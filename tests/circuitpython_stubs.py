@@ -49,6 +49,30 @@ class FakeRadio:
         self.connected = True
 
 
+class FakeHostKeyboard(FakeKeyboard):
+    """Keyboard whose led_status a fake host can change, like a real one.
+
+    answers=True models a host that processes the Num Lock press and
+    reports the new LED state back; answers=False models one that is not
+    listening, which is what a dead cable or a sleeping machine looks
+    like from the device.
+    """
+
+    LED_NUM_LOCK = 0x01
+    LED_CAPS_LOCK = 0x02
+
+    def __init__(self, answers=True):
+        super().__init__()
+        self.led_status = bytes([0])
+        self.answers = answers
+
+    def press(self, key):
+        super().press(key)
+        if self.answers and key == 0x53:
+            current = self.led_status[0]
+            self.led_status = bytes([current ^ self.LED_NUM_LOCK])
+
+
 class FakeRequest:
     """Stands in for an adafruit_httpserver Request."""
 

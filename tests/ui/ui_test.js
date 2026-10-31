@@ -65,6 +65,15 @@ const { chromium } = require('playwright');
   ok('descrie asteptarea', text.includes('wait 500 ms'));
   ok('descrie combinatia', text.includes('press CTRL'));
 
+  // --- verificarea hostului ---
+  console.log('=== VERIFY HOST ===');
+  ok('butonul exista', await page.locator('button:text-is("VERIFY HOST")').count() === 1);
+  await page.click('button:text-is("VERIFY HOST")');
+  await page.waitForFunction(() => /receiving|Could not tell/.test(
+      document.getElementById('status').innerText));
+  ok('raporteaza ca hostul primeste',
+     (await status.innerText()).includes('Host is receiving'));
+
   // --- biblioteca ---
   console.log('=== BIBLIOTECA ===');
   await page.fill('#script', 'STRING saved payload\n');

@@ -409,10 +409,31 @@ Raising `CHAR_DELAY` is still worth doing on a slow or loaded target — it
 paces the host's input handling, which is a different bottleneck from the
 polling one.
 
-There is no way to confirm a keystroke actually arrived. USB HID gives
-the device no acknowledgement; the only backchannel is the host's LED
-state (`get_last_received_report`), and a round trip through it costs far
-more than the hold it would be verifying.
+There is no per-keystroke acknowledgement. USB HID does not give the
+device one, so nothing can confirm that a particular character landed.
+
+There is, however, exactly one backchannel: the host sends the device its
+keyboard LED state. `POST /verify`, and the **VERIFY HOST** button, press
+Num Lock, wait for that state to come back changed, and press it again so
+the target ends as it started. If it comes back, the host received a
+keystroke, acted on it and reported the result — end to end, for real.
+
+That tells you the channel works, not that a given character arrived. It
+is a pre-flight check, not something to run per keystroke: it costs a
+round trip and it blinks a light on the user's keyboard.
+
+```json
+{"ok": true,  "detail": "host acknowledged a keystroke"}
+{"ok": false, "detail": "no response from the host within 0.5s; keystrokes are probably not arriving"}
+{"ok": null,  "detail": "this build does not report LED state (...)"}
+```
+
+`ok: null` means the answer is not knowable, which is not the same as a
+failure, and the UI says so differently.
+
+Relatedly, `/execute` now refuses with a `503` when no USB host is
+attached. Running a payload into a charger, or into nothing, used to
+report that it had executed successfully.
 
 This is also the clearest reason a rewrite in a faster language would not
 help here: it would push the two reports closer together and lose more

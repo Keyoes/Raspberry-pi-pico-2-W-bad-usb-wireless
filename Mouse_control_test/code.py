@@ -422,9 +422,34 @@ def setup_server():
         except Exception as e:
             return httpresponse.Response(request, f"Error: {str(e)}", status=500)
     
+    @server.route("/verify", httpmethods.POST)
+    def verify_link(request):
+        """Check the host is actually receiving keystrokes.
+
+        Presses Num Lock and waits for the host to report the LED state
+        back, then presses it again to leave the target as it was. This is
+        the only acknowledgement USB HID offers, so it is the only way to
+        tell a working cable from a payload typing into nothing.
+        """
+        ok, detail = badusb_core.verify_host_link()
+        return _json(request, {
+            "ok": ok,
+            "detail": detail,
+            "usb_connected": badusb_core.usb_host_connected(),
+        }, status=200 if ok else 503)
+
     @server.route("/execute", httpmethods.POST)
     def execute_badusb(request):
         try:
+            if badusb_core.usb_host_connected() is False:
+                # Running a payload with nothing plugged in used to report
+                # success. It types into nothing.
+                return httpresponse.Response(
+                    request,
+                    "No USB host attached; nothing would be typed",
+                    status=503,
+                )
+
             if execute_script():
                 return httpresponse.Response(request, "Enhanced attack executed successfully")
             else:
