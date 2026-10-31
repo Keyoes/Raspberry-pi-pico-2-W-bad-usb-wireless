@@ -284,6 +284,35 @@ def read_script():
     return "".join(line if line.endswith("\n") else line + "\n" for line in lines)
 
 
+MAX_BODY_BYTES = 16384
+
+
+class BodyTooLarge(Exception):
+    """A request body was refused for being larger than MAX_BODY_BYTES."""
+
+
+def read_body(request, limit=MAX_BODY_BYTES):
+    """Decode a request body, refusing an oversized one.
+
+    The board has 520 KB of RAM shared with the WiFi stack and the HTTP
+    server, and every endpoint used to call request.body.decode() with no
+    ceiling. decode() allocates a second copy, so a large upload could
+    double its own cost and take the board down with a MemoryError that
+    looks like a crash rather than a rejected request.
+
+    This does not stop the library buffering the body in the first place --
+    that is governed by the Server's request_buffer_size, which is worth
+    tuning on real hardware. It does bound the copy and turn "the device
+    fell over" into a clean refusal.
+    """
+    raw = request.body or b""
+
+    if len(raw) > limit:
+        raise BodyTooLarge(f"body is {len(raw)} bytes, the limit is {limit}")
+
+    return raw.decode("utf-8")
+
+
 BASE_COMMANDS = ("STRING", "DELAY", "CHAR_DELAY", "REM")
 
 
@@ -417,20 +446,56 @@ def page_response(request, filename="index.html", root=DEFAULT_WWW_ROOT):
     the RAM win on its own, so nothing breaks if it was never generated.
     Run tools/build_www.py to produce it.
     """
-    gz_name = filename + ".gz"
+    gz_path = f"{root}/{filename}.gz"
+
+    # Revalidate rather than cache blindly: the browser always asks, but an
+    # unchanged page costs a 304 instead of the whole document. The size is
+    # a weak validator, which is why this is no-cache and not max-age --
+    # editing the page can never leave a stale copy in the browser.
+    try:
+        etag = f'"{os.stat(gz_path)[6]}-gz"'
+    except OSError:
+        try:
+            etag = f'"{os.stat(f"{root}/{filename}")[6]}"'
+        except OSError:
+            etag = None
+
+    headers = {"Cache-Control": "no-cache"}
+    if etag:
+        headers["ETag"] = etag
+        if request is not None and _if_none_match(request) == etag:
+            return _response.Response(request, "", status=304, headers=headers)
 
     try:
-        with open(f"{root}/{gz_name}", "rb") as f:
+        with open(gz_path, "rb") as f:
             body = f.read()
     except OSError:
-        return _response.FileResponse(request, filename, root_path=root)
+        return _response.FileResponse(request, filename, root_path=root, headers=headers)
+
+    headers["Content-Encoding"] = "gzip"
+
+    # The page is the biggest allocation this firmware makes per request;
+    # hand the memory back now rather than at some arbitrary later point.
+    gc.collect()
 
     return _response.Response(
         request,
         body,
         content_type="text/html",
-        headers={"Content-Encoding": "gzip"},
+        headers=headers,
     )
+
+
+def _if_none_match(request):
+    """The request's If-None-Match header, or None.
+
+    Tolerant of a request object that exposes headers differently, since a
+    missing header must never be the reason a page fails to load.
+    """
+    try:
+        return request.headers.get("if-none-match")
+    except Exception:
+        return None
 
 
 def status_snapshot():

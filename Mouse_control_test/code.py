@@ -370,9 +370,11 @@ def setup_server():
     @server.route("/upload", httpmethods.POST)
     def upload_script(request):
         try:
-            content = request.body.decode("utf-8")
+            content = badusb_core.read_body(request)
             detail = save_script(content)
             return httpresponse.Response(request, f"Enhanced script uploaded: {detail}")
+        except badusb_core.BodyTooLarge as e:
+            return httpresponse.Response(request, f"Refused: {e}", status=413)
         except Exception as e:
             return httpresponse.Response(request, f"Error: {str(e)}", status=500)
     
@@ -399,7 +401,7 @@ def setup_server():
         """Report what is wrong with a script. Sends no keystrokes."""
         try:
             problems = badusb_core.validate_script(
-                request.body.decode("utf-8"), extra_commands=MOUSE_COMMANDS
+                badusb_core.read_body(request), extra_commands=MOUSE_COMMANDS
             )
             return _json(request, {
                 "ok": not problems,
@@ -408,6 +410,8 @@ def setup_server():
                     for number, text, message in problems
                 ],
             })
+        except badusb_core.BodyTooLarge as e:
+            return _json(request, {"error": str(e)}, status=413)
         except Exception as e:
             return _json(request, {"error": str(e)}, status=500)
 
@@ -415,13 +419,15 @@ def setup_server():
     def dry_run(request):
         """Describe what a script would do. Sends no keystrokes."""
         try:
-            text = request.body.decode("utf-8") or badusb_core.read_script()
+            text = badusb_core.read_body(request) or badusb_core.read_script()
             if not text:
                 return _json(request, {"error": "no script given or stored"}, status=404)
 
             return _json(request, {
                 "steps": badusb_core.explain_script(text, extra_commands=MOUSE_COMMANDS)
             })
+        except badusb_core.BodyTooLarge as e:
+            return _json(request, {"error": str(e)}, status=413)
         except Exception as e:
             return _json(request, {"error": str(e)}, status=500)
 
@@ -436,7 +442,7 @@ def setup_server():
         Body: {"action": "save"|"load"|"delete", "name": ..., "script": ...}
         """
         try:
-            data = json.loads(request.body.decode("utf-8"))
+            data = json.loads(badusb_core.read_body(request))
             action = data.get("action", "")
             name = data.get("name", "")
 
@@ -459,13 +465,15 @@ def setup_server():
             return _json(request, {"error": f"unknown action {action!r}"}, status=400)
         except ValueError as e:
             return _json(request, {"error": str(e)}, status=400)
+        except badusb_core.BodyTooLarge as e:
+            return _json(request, {"error": str(e)}, status=413)
         except Exception as e:
             return _json(request, {"error": str(e)}, status=500)
 
     @server.route("/api/badusb", httpmethods.POST)
     def api_badusb(request):
         try:
-            content = request.body.decode("utf-8")
+            content = badusb_core.read_body(request)
             
             try:
                 data = json.loads(content)
@@ -506,6 +514,9 @@ def setup_server():
                     request, f"Script uploaded ({detail}) but execution failed", status=500
                 )
 
+        except badusb_core.BodyTooLarge as e:
+            return httpresponse.Response(request, json.dumps({"status": "error", "message": str(e)}),
+                                      status=413, content_type="application/json")
         except Exception as e:
             # json.dumps, not an f-string: an exception message containing a
             # quote or backslash used to produce invalid JSON here.

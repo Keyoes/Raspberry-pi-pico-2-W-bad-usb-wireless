@@ -49,6 +49,14 @@ class FakeRadio:
         self.connected = True
 
 
+class FakeRequest:
+    """Stands in for an adafruit_httpserver Request."""
+
+    def __init__(self, body=b"", headers=None):
+        self.body = body
+        self.headers = headers or {}
+
+
 class FakeResponse:
     def __init__(self, request, body=None, status=200, content_type=None, headers=None):
         self.request = request

@@ -205,6 +205,17 @@ Names may contain letters, digits, dash, underscore and dot, up to 48
 characters. Anything else is refused rather than quietly rewritten, so a
 name like `../boot.py` cannot reach outside the script directory.
 
+### Request size limit
+
+Every endpoint that takes a body refuses anything over 16 KB with a
+`413`, rather than letting `decode()` allocate a second copy and take the
+board down with a `MemoryError` that looks like a crash. Raise
+`MAX_BODY_BYTES` in `lib/badusb_core.py` if you need longer scripts.
+
+This bounds the copy, not the library's own buffering of the request. If
+you are pushing large bodies, the Server's `request_buffer_size` is the
+other lever, and it is worth measuring on hardware before changing.
+
 ### Device status
 
 `GET /wifi-status` reports the link, the uptime and the free memory:

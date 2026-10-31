@@ -264,28 +264,96 @@ class TestStatusSnapshot(CoreTestCase):
         self.assertEqual(self.core.status_snapshot()["ip"], "Not connected")
 
 
+class TestBodyLimit(CoreTestCase):
+    def test_decodes_a_body_within_the_limit(self):
+        request = stubs.FakeRequest(b"STRING hello")
+        self.assertEqual(self.core.read_body(request), "STRING hello")
+
+    def test_an_empty_body_reads_as_empty(self):
+        self.assertEqual(self.core.read_body(stubs.FakeRequest(b"")), "")
+        self.assertEqual(self.core.read_body(stubs.FakeRequest(None)), "")
+
+    def test_refuses_an_oversized_body(self):
+        request = stubs.FakeRequest(b"x" * 100)
+        with self.assertRaises(self.core.BodyTooLarge):
+            self.core.read_body(request, limit=99)
+
+    def test_the_refusal_names_both_sizes(self):
+        request = stubs.FakeRequest(b"x" * 100)
+        try:
+            self.core.read_body(request, limit=10)
+        except self.core.BodyTooLarge as e:
+            self.assertIn("100", str(e))
+            self.assertIn("10", str(e))
+
+    def test_a_body_exactly_at_the_limit_is_accepted(self):
+        request = stubs.FakeRequest(b"x" * 50)
+        self.assertEqual(len(self.core.read_body(request, limit=50)), 50)
+
+
 class TestPageResponse(CoreTestCase):
     def setUp(self):
         super().setUp()
         self.www = os.path.join(self.tmp, "www")
         os.mkdir(self.www)
 
-    def test_streams_the_plain_file_when_there_is_no_gzip(self):
+    def write_plain(self, body="<html></html>"):
         with open(os.path.join(self.www, "index.html"), "w") as f:
-            f.write("<html></html>")
+            f.write(body)
 
-        response = self.core.page_response(None, root=self.www)
+    def write_gzip(self, body=b"\x1f\x8bcompressed"):
+        with open(os.path.join(self.www, "index.html.gz"), "wb") as f:
+            f.write(body)
+
+    def test_streams_the_plain_file_when_there_is_no_gzip(self):
+        self.write_plain()
+
+        response = self.core.page_response(stubs.FakeRequest(), root=self.www)
         self.assertIsInstance(response, stubs.FakeFileResponse)
         self.assertEqual(response.filename, "index.html")
 
     def test_prefers_the_gzip_and_marks_the_encoding(self):
-        with open(os.path.join(self.www, "index.html.gz"), "wb") as f:
-            f.write(b"\x1f\x8bcompressed")
+        self.write_gzip()
 
-        response = self.core.page_response(None, root=self.www)
+        response = self.core.page_response(stubs.FakeRequest(), root=self.www)
         self.assertIsInstance(response, stubs.FakeResponse)
         self.assertEqual(response.headers["Content-Encoding"], "gzip")
         self.assertEqual(response.content_type, "text/html")
+
+    def test_offers_an_etag_and_always_revalidates(self):
+        self.write_gzip()
+
+        response = self.core.page_response(stubs.FakeRequest(), root=self.www)
+        self.assertIn("ETag", response.headers)
+        self.assertEqual(response.headers["Cache-Control"], "no-cache")
+
+    def test_an_unchanged_page_costs_a_304_not_the_document(self):
+        self.write_gzip()
+        first = self.core.page_response(stubs.FakeRequest(), root=self.www)
+        etag = first.headers["ETag"]
+
+        again = self.core.page_response(
+            stubs.FakeRequest(headers={"if-none-match": etag}), root=self.www
+        )
+        self.assertEqual(again.status, 304)
+        self.assertEqual(again.body, "")
+
+    def test_an_edited_page_is_sent_again(self):
+        self.write_gzip(b"\x1f\x8bshort")
+        etag = self.core.page_response(stubs.FakeRequest(), root=self.www).headers["ETag"]
+
+        self.write_gzip(b"\x1f\x8bconsiderably longer than before")
+        response = self.core.page_response(
+            stubs.FakeRequest(headers={"if-none-match": etag}), root=self.www
+        )
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.headers["Content-Encoding"], "gzip")
+
+    def test_a_missing_page_does_not_raise(self):
+        # Nothing in /www at all: must still hand back a response object
+        # rather than blowing up inside the route.
+        response = self.core.page_response(stubs.FakeRequest(), root=self.www)
+        self.assertIsInstance(response, stubs.FakeFileResponse)
 
 
 class TestReconnectPolicy(CoreTestCase):
