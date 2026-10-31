@@ -439,6 +439,19 @@ its socket after a reconnect and not when the reconnect failed.
 A green run means the logic holds. It says nothing about USB HID, the radio
 or the HTTP server, which are stubbed — those still need a real board.
 
+There is also a browser test for the web page itself, which needs Playwright
+and a Chromium:
+
+```bash
+python3 tests/ui/mock_device.py &
+node tests/ui/ui_test.js
+```
+
+`mock_device.py` serves the real page and answers its requests using the
+real `badusb_core`, so the page gets what the firmware would send. Worth
+running after touching the page: it is what caught the boot animation wiping
+command output and deleting the terminal background effect.
+
 ## Ethics Statement
 
 KEYOES BadUSB Controller is designed for legitimate security testing, system administration, and educational purposes only. Users bear full responsibility for ensuring their usage complies with applicable laws, regulations, and organizational policies. Always obtain proper authorization before conducting any security testing.

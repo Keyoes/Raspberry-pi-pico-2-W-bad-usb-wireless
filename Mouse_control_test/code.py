@@ -23,6 +23,10 @@ WWW_ROOT = "/www"
 
 # Commands this build understands on top of the shared set, so the
 # validator and the dry run do not report them as unknown.
+# Upper bound on a single SCROLL_UP / SCROLL_DOWN, so one line cannot tie
+# the board up indefinitely.
+MAX_SCROLL_STEPS = 200
+
 MOUSE_COMMANDS = (
     "MOUSE_CLICK", "MOUSE_MOVE", "MOUSE_PRESS", "MOUSE_RELEASE",
     "MOUSE_DRAG", "MOUSE_SPEED", "SCROLL_UP", "SCROLL_DOWN",
@@ -157,12 +161,22 @@ def execute_mouse_command(command, params, char_delay, mouse_speed=1):
             return False
             
         elif command == "SCROLL_UP":
+            # A negative count made range() empty, so the command did
+            # nothing and still reported success; an enormous one tied the
+            # board up in a long loop. Clamp to something sane instead.
             scroll_amount = 1
             if params:
                 try:
                     scroll_amount = int(params)
                 except ValueError:
-                    pass
+                    print(f"Invalid SCROLL_UP amount: {params}")
+                    return False
+
+                if scroll_amount < 1:
+                    print("SCROLL_UP amount must be at least 1")
+                    return False
+
+                scroll_amount = min(scroll_amount, MAX_SCROLL_STEPS)
             
             for _ in range(scroll_amount):
                 mouse.move(0, 0, 1)
@@ -171,12 +185,22 @@ def execute_mouse_command(command, params, char_delay, mouse_speed=1):
             return True
             
         elif command == "SCROLL_DOWN":
+            # A negative count made range() empty, so the command did
+            # nothing and still reported success; an enormous one tied the
+            # board up in a long loop. Clamp to something sane instead.
             scroll_amount = 1
             if params:
                 try:
                     scroll_amount = int(params)
                 except ValueError:
-                    pass
+                    print(f"Invalid SCROLL_DOWN amount: {params}")
+                    return False
+
+                if scroll_amount < 1:
+                    print("SCROLL_DOWN amount must be at least 1")
+                    return False
+
+                scroll_amount = min(scroll_amount, MAX_SCROLL_STEPS)
                     
             for _ in range(scroll_amount):
                 mouse.move(0, 0, -1)
@@ -185,31 +209,38 @@ def execute_mouse_command(command, params, char_delay, mouse_speed=1):
             return True
             
         elif command == "MOUSE_PRESS":
-            if params:
-                button = params.upper()
-                if button == "LEFT":
-                    mouse.press(Mouse.LEFT_BUTTON)
-                elif button == "RIGHT":
-                    mouse.press(Mouse.RIGHT_BUTTON)
-                elif button == "MIDDLE":
-                    mouse.press(Mouse.MIDDLE_BUTTON)
-                time.sleep(char_delay)
-                return True
-            return False
+            # An unrecognised button used to fall through every branch and
+            # still return True, reporting success for a press that never
+            # happened. MOUSE_CLICK already rejected it; this now matches.
+            buttons = {"LEFT": Mouse.LEFT_BUTTON, "RIGHT": Mouse.RIGHT_BUTTON,
+                       "MIDDLE": Mouse.MIDDLE_BUTTON}
+            if not params:
+                print("MOUSE_PRESS requires a button")
+                return False
+
+            button = params.upper()
+            if button not in buttons:
+                print(f"Unknown mouse button: {button}")
+                return False
+
+            mouse.press(buttons[button])
+            time.sleep(char_delay)
+            return True
             
         elif command == "MOUSE_RELEASE":
-            if params:
-                button = params.upper()
-                if button == "LEFT":
-                    mouse.release(Mouse.LEFT_BUTTON)
-                elif button == "RIGHT":
-                    mouse.release(Mouse.RIGHT_BUTTON)
-                elif button == "MIDDLE":
-                    mouse.release(Mouse.MIDDLE_BUTTON)
-                elif button == "ALL":
-                    mouse.release_all()
-            else:
+            buttons = {"LEFT": Mouse.LEFT_BUTTON, "RIGHT": Mouse.RIGHT_BUTTON,
+                       "MIDDLE": Mouse.MIDDLE_BUTTON}
+            if not params or params.upper() == "ALL":
                 mouse.release_all()
+            else:
+                button = params.upper()
+                if button not in buttons:
+                    # Same fix as MOUSE_PRESS: do not claim to have released
+                    # a button that was never named.
+                    print(f"Unknown mouse button: {button}")
+                    return False
+                mouse.release(buttons[button])
+
             time.sleep(char_delay)
             return True
             

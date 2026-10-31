@@ -242,13 +242,43 @@
             transform: translateY(-2px);
         }
         
+        .library-row input,
+        .library-row select {
+            background-color: var(--kali-terminal-bg);
+            color: var(--kali-text);
+            border: 1px solid var(--kali-border);
+            border-radius: 4px;
+            padding: 12px 14px;
+            font-family: 'JetBrains Mono', 'Ubuntu Mono', 'Courier New', monospace;
+            font-size: 14px;
+            min-width: 160px;
+        }
+
+        .library-row input:focus,
+        .library-row select:focus {
+            outline: none;
+            border-color: var(--kali-accent);
+        }
+
+        .report-line {
+            display: block;
+            white-space: pre-wrap;
+        }
+
+        .report-problem { color: #ffb86c; }
+        .report-ok { color: #50fa7b; }
+
         .output-window {
             background-color: var(--kali-terminal-bg);
             border: 1px solid var(--kali-border);
             border-radius: 5px;
             padding: 15px 15px 15px 10px;
             margin-top: 20px;
-            height: 80px;
+            /* Was a fixed 80px, which was fine for a one-line status but
+               cut a validation report down to its first line inside a tiny
+               scroll box. Grow with the content up to a point, then scroll. */
+            min-height: 80px;
+            max-height: 320px;
             overflow-y: auto;
             font-family: 'JetBrains Mono', 'Ubuntu Mono', 'Courier New', monospace;
             font-size: 14px;
@@ -530,6 +560,22 @@
                 <button onclick="executeScript()">EXECUTE</button>
                 <button onclick="clearScript()">CLEAR</button>
             </div>
+
+            <!-- Inspect a script without sending a single keystroke. -->
+            <div class="button-container">
+                <button onclick="checkScript()">CHECK</button>
+                <button onclick="dryRun()">DRY RUN</button>
+            </div>
+
+            <div class="button-container library-row">
+                <input id="script-name" placeholder="script name" autocomplete="off">
+                <select id="script-list" onchange="pickScript()">
+                    <option value="">-- saved scripts --</option>
+                </select>
+                <button onclick="saveNamed()">SAVE</button>
+                <button onclick="loadNamed()">LOAD</button>
+                <button onclick="deleteNamed()">DELETE</button>
+            </div>
             
             <div class="output-window">
                 <div class="terminal-bg-effect"></div>
@@ -559,6 +605,27 @@
     <script>
         let commandHistory = [], payloadHistory = [], lastPingTime = Date.now(), connectionLost = false, connectionCheckInterval;
         
+        // Every status write goes through here. Two reasons: the boot
+        // animation must stop as soon as there is something real to show,
+        // and writing into the #status span keeps the rest of the terminal
+        // markup intact. The animation used to assign to the whole output
+        // window's innerHTML, which destroyed .terminal-bg-effect on the
+        // first tick -- so the effect never appeared at all -- and silently
+        // wiped any command output for the first 2.4 seconds after load.
+        let userHasActed = false;
+
+        function setStatus(html) {
+            userHasActed = true;
+            const status = document.getElementById('status');
+            if (status) status.innerHTML = html;
+        }
+
+        function bootStatus(text) {
+            if (userHasActed) return;
+            const status = document.getElementById('status');
+            if (status) status.textContent = text;
+        }
+
         function addToHistory(command, status) {
             const now = new Date(), timestamp = now.toLocaleTimeString();
             commandHistory.unshift({time: timestamp, command: command, status: status});
@@ -640,7 +707,7 @@
         
         function sendScript() {
             const script = document.getElementById('script').value;
-            document.getElementById('status').innerHTML = "Uploading script...";
+            setStatus("Uploading script...");
             
             fetch('/upload', {
                 method: 'POST',
@@ -649,38 +716,192 @@
             })
             .then(response => response.text())
             .then(data => {
-                document.getElementById('status').innerHTML = data;
+                setStatus(data);
                 addToHistory("UPLOAD", "success");
             })
             .catch(error => {
-                document.getElementById('status').innerHTML = 'Error: ' + error;
+                setStatus('Error: ' + error);
                 addToHistory("UPLOAD", "failed: " + error);
             });
         }
 
         function executeScript() {
             const script = document.getElementById('script').value;
-            document.getElementById('status').innerHTML = "Executing attack...";
+            setStatus("Executing attack...");
             
             fetch('/execute', {method: 'POST'})
             .then(response => response.text())
             .then(data => {
-                document.getElementById('status').innerHTML = data;
+                setStatus(data);
                 addToHistory("EXECUTE", "success");
                 if (script && script.trim() !== '') addToPayloadHistory(script);
             })
             .catch(error => {
-                document.getElementById('status').innerHTML = 'Error: ' + error;
+                setStatus('Error: ' + error);
                 addToHistory("EXECUTE", "failed: " + error);
             });
         }
         
         function clearScript() {
             document.getElementById('script').value = '';
-            document.getElementById('status').innerHTML = "Terminal cleared";
+            setStatus("Terminal cleared");
             addToHistory("CLEAR", "success");
         }
         
+        // Script text is user-controlled and gets echoed back by /validate,
+        // so it is escaped before it ever reaches innerHTML.
+        function escapeHtml(text) {
+            return String(text).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[c]);
+        }
+
+        function showReport(lines) {
+            setStatus(lines.join('<br>'));
+        }
+
+        function reportError(label, error) {
+            setStatus('Error: ' + escapeHtml(error));
+            addToHistory(label, "failed: " + error);
+        }
+
+        // CHECK and DRY RUN send the script for inspection only. Neither
+        // makes the device type anything.
+        function checkScript() {
+            const script = document.getElementById('script').value;
+            setStatus("Checking script...");
+
+            fetch('/validate', {
+                method: 'POST',
+                body: script,
+                headers: {'Content-Type': 'text/plain'}
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) { reportError("CHECK", data.error); return; }
+
+                if (data.ok) {
+                    showReport(['<span class="report-ok">Every line understood. '
+                                + 'That does not mean it does what you meant.</span>']);
+                    addToHistory("CHECK", "success");
+                    return;
+                }
+
+                showReport(['<span class="report-problem">' + data.problems.length
+                            + ' problem(s):</span>'].concat(
+                    data.problems.map(p =>
+                        '<span class="report-line">  line ' + p.line + ': '
+                        + escapeHtml(p.text) + '<br>    ' + escapeHtml(p.message)
+                        + '</span>')));
+                addToHistory("CHECK", data.problems.length + " problem(s)");
+            })
+            .catch(error => reportError("CHECK", error));
+        }
+
+        function dryRun() {
+            const script = document.getElementById('script').value;
+            setStatus("Dry run, nothing is sent...");
+
+            fetch('/dry-run', {
+                method: 'POST',
+                body: script,
+                headers: {'Content-Type': 'text/plain'}
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) { reportError("DRY RUN", data.error); return; }
+
+                if (!data.steps.length) {
+                    showReport(['Nothing to do: the script has no runnable lines.']);
+                    addToHistory("DRY RUN", "success");
+                    return;
+                }
+
+                showReport(['<span class="report-ok">Would do, without sending '
+                            + 'anything:</span>'].concat(
+                    data.steps.map(step => {
+                        let row = '<span class="report-line">  ' + step.line + '. '
+                                + escapeHtml(step.detail || step.kind);
+                        if (step.warning) {
+                            row += '<br>     <span class="report-problem">! '
+                                 + escapeHtml(step.warning) + '</span>';
+                        }
+                        return row + '</span>';
+                    })));
+                addToHistory("DRY RUN", data.steps.length + " step(s)");
+            })
+            .catch(error => reportError("DRY RUN", error));
+        }
+
+        function refreshScripts() {
+            return fetch('/scripts')
+                .then(response => response.json())
+                .then(data => {
+                    const list = document.getElementById('script-list');
+                    const current = list.value;
+                    list.innerHTML = '<option value="">-- saved scripts --</option>';
+                    (data.scripts || []).forEach(name => {
+                        const option = document.createElement('option');
+                        option.value = name;
+                        option.textContent = name;
+                        list.appendChild(option);
+                    });
+                    list.value = current;
+                })
+                .catch(() => {});
+        }
+
+        function pickScript() {
+            const name = document.getElementById('script-list').value;
+            if (name) document.getElementById('script-name').value = name;
+        }
+
+        function libraryAction(action, label, onDone) {
+            const name = document.getElementById('script-name').value.trim();
+            if (!name) {
+                showReport(['Give the script a name first.']);
+                return;
+            }
+
+            const payload = {action: action, name: name};
+            if (action === 'save') payload.script = document.getElementById('script').value;
+
+            fetch('/scripts', {
+                method: 'POST',
+                body: JSON.stringify(payload),
+                headers: {'Content-Type': 'application/json'}
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) { reportError(label, data.error); return; }
+                onDone(data, name);
+                addToHistory(label, "success");
+                refreshScripts();
+            })
+            .catch(error => reportError(label, error));
+        }
+
+        function saveNamed() {
+            libraryAction('save', "SAVE", (data, name) =>
+                showReport(['Saved as ' + escapeHtml(name) + '.']));
+        }
+
+        function loadNamed() {
+            // Loading makes it the device's active script, which is what
+            // EXECUTE runs. The editor box is left alone; CHECK or DRY RUN
+            // with an empty box inspect whatever is now loaded.
+            libraryAction('load', "LOAD", (data, name) =>
+                showReport([escapeHtml(name) + ' is now the active script ('
+                            + escapeHtml(data.detail || '') + ').']));
+        }
+
+        function deleteNamed() {
+            libraryAction('delete', "DELETE", (data, name) => {
+                showReport(['Deleted ' + escapeHtml(name) + '.']);
+                document.getElementById('script-name').value = '';
+            });
+        }
+
         function checkWifiStatus() {
             fetch('/wifi-status?t=' + Date.now(), {signal: AbortSignal.timeout(3000)})
             .then(response => response.json())
@@ -761,6 +982,7 @@
         
         window.onload = function() {
             addToHistory("SYSTEM BOOT", "success");
+            refreshScripts();
             checkWifiStatus();
             
             let initialChecks = 0;
@@ -770,20 +992,16 @@
                 if (initialChecks >= 12) clearInterval(initialInterval);
             }, 10000);
             
-            const outputWindow = document.querySelector('.output-window');
-            outputWindow.innerHTML = '<span id="status">Initializing Keyoes BadUSB Controller...</span><span class="cursor"></span>';
-            
-            setTimeout(() => {
-                outputWindow.innerHTML = '<span id="status">Loading system modules...</span><span class="cursor"></span>';
-            }, 800);
-            
-            setTimeout(() => {
-                outputWindow.innerHTML = '<span id="status">Establishing connection...</span><span class="cursor"></span>';
-            }, 1600);
-            
-            setTimeout(() => {
-                outputWindow.innerHTML = '<span id="status">System ready. Waiting for command...</span><span class="cursor"></span>';
-            }, 2400);
+            // bootStatus, not outputWindow.innerHTML: these ticks used to
+            // replace the whole terminal body, which removed
+            // .terminal-bg-effect on the first one and overwrote real
+            // command output for the first 2.4 seconds. bootStatus writes
+            // into the #status span and gives up the moment the user does
+            // anything.
+            bootStatus('Initializing Keyoes BadUSB Controller...');
+            setTimeout(() => bootStatus('Loading system modules...'), 800);
+            setTimeout(() => bootStatus('Establishing connection...'), 1600);
+            setTimeout(() => bootStatus('System ready. Waiting for command...'), 2400);
         };
     </script>
 </body>
