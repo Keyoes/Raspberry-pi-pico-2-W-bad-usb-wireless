@@ -8,8 +8,29 @@ from adafruit_hid.keyboard_layout_us import KeyboardLayoutUS
 from adafruit_hid.keycode import Keycode
 import usb_hid
 
-led = digitalio.DigitalInOut(board.LED)
-led.direction = digitalio.Direction.OUTPUT
+def _init_status_led():
+    """Return the on-board status LED.
+
+    Not every board exposes ``board.LED``. On most ESP32-S2/S3 boards the
+    on-board indicator is a NeoPixel (``board.NEOPIXEL``) or simply absent,
+    which used to raise AttributeError here and kill the script before it
+    ever reached the WiFi setup. Fall back to a no-op stub so the firmware
+    still boots; the LED is only a status indicator.
+    """
+    try:
+        pin = digitalio.DigitalInOut(board.LED)
+        pin.direction = digitalio.Direction.OUTPUT
+        return pin
+    except (AttributeError, ValueError) as exc:
+        print(f"No usable status LED ({exc}); continuing without it.")
+
+        class _NoStatusLed:
+            value = False
+
+        return _NoStatusLed()
+
+
+led = _init_status_led()
 
 for _ in range(3):
     led.value = True
