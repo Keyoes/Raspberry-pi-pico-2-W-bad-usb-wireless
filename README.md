@@ -17,6 +17,46 @@ A powerful BadUSB controller for Raspberry Pi Pico 2 W with a web interface for 
 - **RESTful API** for programmatic control
 - **Keyboard support** for EN (US) layout
 
+## ⚠️ If you are updating from an earlier version
+
+The layout changed, and copying `code.py` alone is no longer enough. The
+board will not start without all three:
+
+| | where it goes on the device |
+|---|---|
+| `code.py`, `boot.py` | the root of CIRCUITPY, as before |
+| `lib/badusb_core.py` | `lib/`, next to the Adafruit libraries |
+| `www/index.html` | a new `www/` directory |
+
+`badusb_core.py` holds the code both builds share, so a fix lands once
+instead of twice. The page moved out of `code.py` into `www/` so it is no
+longer a 27 KB string the board has to hold in RAM for every request.
+
+Optionally run `python3 tools/build_www.py` and copy the generated
+`www/index.html.gz` as well; it is about 80% smaller and the firmware
+prefers it, falling back to the plain file when it is absent.
+
+### What else changed
+
+- The recovery path now recovers. A dropped WiFi link used to end in a
+  reboot, because the server was restarted without releasing port 80
+  first, and the scheduled check had its condition inverted.
+- Uploads report where the script actually went. A write that failed and
+  fell back to RAM used to answer "uploaded successfully".
+- Scripts can be checked before they run, with `/validate` and `/dry-run`
+  and the CHECK and DRY RUN buttons. Neither sends a keystroke. Among
+  other things they catch `CTRL ALT DELETE`, which only ever sent Ctrl.
+- Longer scripts work. The server's request buffer was left at the
+  library's 1024-byte default, so anything much over a kilobyte never
+  reached the handler.
+- The page keeps its terminal background effect, which the boot animation
+  used to delete about 100 ms after load, and no longer wipes a command's
+  output during the first 2.4 seconds.
+- Start-up takes 0.78 s instead of 2.20 s before the first request.
+
+Everything here was verified in simulation and by a browser test, not on
+hardware. See **Running the tests**.
+
 ## 📋 Prerequisites
 
 Before getting started, you'll need:
@@ -346,6 +386,43 @@ STRING echo This script will execute reliably
 ENTER
 ```
 
+### Space-separated key combinations only send their first key
+
+`CTRL ALT DELETE` presses Ctrl and drops the rest. The interpreter matches
+a bare key name before it considers the `+` form, so the remainder of the
+line never gets looked at. Write `CTRL+ALT+DELETE`.
+
+`/validate` and the CHECK button report this, with the corrected line, so
+you do not have to remember it.
+
+### MOUSE_MOVE and MOUSE_DRAG undershoot
+
+Both split the movement into steps and truncate each one with `int()`, so
+the leftover fraction is lost on every step and the pointer always lands
+short, never past. A 199 px move arrives at 190 px, about 5%. Smaller and
+round distances are usually exact; the error is worst at values that do
+not divide evenly.
+
+### Keyboard layout is EN (US) only
+
+Only `keyboard_layout_us.mpy` ships in `lib/`, so `STRING` produces the
+wrong characters on any other physical layout.
+
+### Saving scripts needs a writable filesystem
+
+`boot.py` calls `storage.disable_usb_drive()`, which is what lets the board
+write to its own filesystem. If you have undone that to edit the code — see
+**Safely Editing the Python Code** — saved scripts fall back to RAM and are
+lost on reset. The upload response says which happened rather than
+reporting success either way.
+
+### The web interface has no authentication
+
+Anyone who can reach the device on the network can upload and run a
+payload. There is no login, and `adafruit_httpserver` ships a `Basic`
+helper that would close this. Worth doing before putting the device on a
+network you do not control.
+
 ## Keyboard Shortcuts
 
 The web interface supports several keyboard shortcuts:
@@ -372,6 +449,14 @@ To edit the `code.py` file without risking automatic execution:
 4. Now when you connect the Pico normally, it will mount as a storage device
 5. Edit `code.py` as needed
 6. Remember to revert the `boot.py` changes when finished
+
+While `boot.py` is in this state the board cannot write to its own
+filesystem, so anything the device tries to save — the active script, the
+script library — stays in RAM and is lost on reset. The upload response
+says so rather than claiming success, but it is easy to forget why.
+
+A GPIO jumper read at boot is a tidier way to do this than editing
+`boot.py` back and forth, if you find yourself doing it often.
 
 ## Technical Details
 
