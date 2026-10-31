@@ -316,8 +316,12 @@ class TestPageResponse(CoreTestCase):
         self.write_gzip()
 
         response = self.core.page_response(stubs.FakeRequest(), root=self.www)
-        self.assertIsInstance(response, stubs.FakeResponse)
+        # Streamed, like the plain file: neither path holds the whole page.
+        self.assertIsInstance(response, stubs.FakeFileResponse)
+        self.assertEqual(response.filename, "index.html.gz")
         self.assertEqual(response.headers["Content-Encoding"], "gzip")
+        # Without this the library would map .gz to application/gzip and the
+        # browser would download the page instead of rendering it.
         self.assertEqual(response.content_type, "text/html")
 
     def test_offers_an_etag_and_always_revalidates(self):

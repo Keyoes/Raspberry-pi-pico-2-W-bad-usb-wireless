@@ -211,14 +211,20 @@ name like `../boot.py` cannot reach outside the script directory.
 
 ### Request size limit
 
-Every endpoint that takes a body refuses anything over 16 KB with a
-`413`, rather than letting `decode()` allocate a second copy and take the
-board down with a `MemoryError` that looks like a crash. Raise
-`MAX_BODY_BYTES` in `lib/badusb_core.py` if you need longer scripts.
+Scripts are capped at 3 KB, and anything larger gets a `413`.
 
-This bounds the copy, not the library's own buffering of the request. If
-you are pushing large bodies, the Server's `request_buffer_size` is the
-other lever, and it is worth measuring on hardware before changing.
+That ceiling is not arbitrary. `adafruit_httpserver` buffers an incoming
+request into `Server.request_buffer_size`, which
+[defaults to 1024 bytes](https://docs.circuitpython.org/projects/httpserver/en/latest/api.html)
+and holds the headers too, so before this was set explicitly a script much
+over a kilobyte never reached the handler at all. Both builds now set it to
+4096 and cap bodies at 3072, leaving room for headers.
+
+To allow longer scripts, raise `REQUEST_BUFFER_SIZE` in the build's
+`code.py` and `MAX_BODY_BYTES` in `lib/badusb_core.py` together, keeping
+the body limit below the buffer. The buffer costs that many bytes of RAM
+for as long as the server runs, so it is a trade against everything else
+on a 520 KB board, not a free win.
 
 ### Device status
 
@@ -425,6 +431,41 @@ detail = badusb_core.save_script(content)
 Saved scripts live in `/scripts` on the device. Names are validated, not
 sanitised: an unacceptable name is refused outright so it cannot become a
 write somewhere else on the filesystem.
+
+### Performance notes
+
+What was changed and what it bought, measured against the version before
+any of this:
+
+| | before | now |
+|---|---|---|
+| page held in RAM per request | 27 KB | streamed, never whole |
+| bytes sent for the page | 27 KB | 7.1 KB gzipped |
+| start-up before the first request | 2.20 s | 0.78 s |
+| poll pause while serving | 100 ms | 2 ms |
+| poll wakeups per second when idle | 10 | 10 |
+
+The page moved out of `code.py` into `/www` and is streamed by
+`FileResponse`, gzipped when `tools/build_www.py` has been run. It carries
+an ETag, so a reload that changes nothing costs a `304` rather than the
+document.
+
+The serving loop adapts its pause: tight while requests are arriving,
+backing off to the original 100 ms when idle, so it is better than the old
+fixed pause under load without waking more often at rest.
+
+Two things measured and deliberately not done:
+
+- **Minifying the page before gzip.** It takes the raw file from 35.6 KB to
+  24.0 KB, but gzip already captures nearly all of that: 7.1 KB against
+  6.6 KB. 579 bytes is not worth the risk of mangling inline JavaScript.
+- **Precompiling `badusb_core.py` to `.mpy`.** Adafruit's
+  [memory-saving guide](https://learn.adafruit.com/memory-saving-tips-for-circuitpython)
+  notes this roughly halves the file's storage and cuts the memory needed
+  to import it. It is a real saving, but `mpy-cross` output must match your
+  CircuitPython version exactly, and a mismatch stops the board booting.
+  Worth doing yourself if you are short on RAM, once you know your version;
+  delete the `.py` if you add the `.mpy`, or they conflict.
 
 ### Running the tests
 

@@ -284,7 +284,12 @@ def read_script():
     return "".join(line if line.endswith("\n") else line + "\n" for line in lines)
 
 
-MAX_BODY_BYTES = 16384
+# The ceiling on a request body. It has to stay below the server's
+# request_buffer_size, which the library defaults to 1024 bytes and which
+# holds the headers as well -- so a script longer than that never reached
+# the handler at all, whatever this value said. Both builds now set the
+# buffer explicitly; keep the two in step if you change either.
+MAX_BODY_BYTES = 3072
 
 
 class BodyTooLarge(Exception):
@@ -300,10 +305,9 @@ def read_body(request, limit=MAX_BODY_BYTES):
     double its own cost and take the board down with a MemoryError that
     looks like a crash rather than a rejected request.
 
-    This does not stop the library buffering the body in the first place --
-    that is governed by the Server's request_buffer_size, which is worth
-    tuning on real hardware. It does bound the copy and turn "the device
-    fell over" into a clean refusal.
+    The library buffers the body first, bounded by the Server's
+    request_buffer_size; this bounds the decoded copy on top of that and
+    turns "the device fell over" into a clean refusal.
     """
     raw = request.body or b""
 
@@ -466,28 +470,24 @@ def page_response(request, filename="index.html", root=DEFAULT_WWW_ROOT):
         if request is not None and _if_none_match(request) == etag:
             return _response.Response(request, "", status=304, headers=headers)
 
-    # Collect *before* the read, not after. The page is the biggest single
-    # allocation this firmware makes, so the point of collecting is to have
-    # the room to read it; doing it afterwards only tidied up once the risky
-    # part had already succeeded.
+    # FileResponse streams the file, so neither branch ever holds the whole
+    # page in RAM. The gzipped one is served with an explicit content type
+    # and Content-Encoding, because the library maps a .gz extension to
+    # application/gzip, which would make the browser download it instead of
+    # rendering it.
     gc.collect()
 
     try:
-        with open(gz_path, "rb") as f:
-            body = f.read()
+        os.stat(gz_path)
     except OSError:
-        return _response.FileResponse(request, filename, root_path=root, headers=headers)
-    except MemoryError:
-        # Out of contiguous RAM for the compressed page: fall back to the
-        # streamed plain file, which never holds the whole thing at once.
-        print("Not enough memory for the gzipped page; streaming the plain file.")
         return _response.FileResponse(request, filename, root_path=root, headers=headers)
 
     headers["Content-Encoding"] = "gzip"
 
-    return _response.Response(
+    return _response.FileResponse(
         request,
-        body,
+        filename + ".gz",
+        root_path=root,
         content_type="text/html",
         headers=headers,
     )

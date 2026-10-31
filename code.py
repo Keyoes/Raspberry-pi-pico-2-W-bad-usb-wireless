@@ -22,6 +22,9 @@ SCRIPT_PATH = "/badusb_script.txt"
 SCRIPT_DIR = "/scripts"
 WWW_ROOT = "/www"
 
+# Must stay above badusb_core.MAX_BODY_BYTES, since headers share this buffer.
+REQUEST_BUFFER_SIZE = 4096
+
 
 def _json(request, payload, status=200, headers=None):
     """JSON response built with json.dumps, never string formatting.
@@ -149,6 +152,12 @@ def setup_server():
     # it at a directory would expose the device's files (settings.toml, the
     # stored script) over HTTP. "/static" did not exist in the first place.
     server = httpserver.Server(pool)
+
+    # The library defaults this to 1024 bytes, headers included, so a script
+    # much over a kilobyte never made it to the handler. Raising it costs
+    # that many bytes of RAM permanently, which is why it is a named
+    # constant rather than something large and hopeful.
+    server.request_buffer_size = REQUEST_BUFFER_SIZE
 
 
     @server.route("/", httpmethods.GET)

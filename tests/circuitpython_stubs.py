@@ -67,10 +67,16 @@ class FakeResponse:
 
 
 class FakeFileResponse:
-    def __init__(self, request, filename, root_path=None, **kwargs):
+    """Streams a file; records what it was told to send it as."""
+
+    def __init__(self, request, filename, root_path=None, content_type=None,
+                 headers=None, status=200, **kwargs):
         self.request = request
         self.filename = filename
         self.root_path = root_path
+        self.content_type = content_type
+        self.headers = headers or {}
+        self.status = status
 
 
 def install(with_led=True, free_memory=180000):
