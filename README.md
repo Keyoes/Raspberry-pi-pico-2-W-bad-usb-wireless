@@ -57,6 +57,41 @@ prefers it, falling back to the plain file when it is absent.
 Everything here was verified in simulation and by a browser test, not on
 hardware. See **Running the tests**.
 
+## Other boards: ESP32-S2 and S3
+
+The firmware is not tied to the Pico. It runs on an ESP32-S2 or S3 with
+**no code changes** — the LED initialisation already falls back, and
+nothing else touches RP2-specific hardware.
+
+It will **not** run on a plain ESP32 or an ESP32-C3. Those have no USB
+device peripheral, so they cannot present themselves as a keyboard at
+all. That is a hardware limit, not a porting problem.
+
+On a [Lolin S2 Mini](https://circuitpython.org/board/lolin_s2_mini/), for
+example: `board.LED` exists on GPIO15, and `usb_hid` and `wifi` are both
+in the board's CircuitPython build. Flash CircuitPython for that board,
+copy the same files, and it works.
+
+Three things to watch, none of them code:
+
+**RAM.** An ESP32-S2 has roughly 320 KB against the Pico 2 W's 520 KB.
+`REQUEST_BUFFER_SIZE` in `code.py` is held for as long as the server
+runs, so it is the first thing to lower if the board runs out. Start-up
+prints the free memory, `/wifi-status` reports it live, and
+`tools/benchmark.py` shows it either side of a page load.
+
+**Flash.** The `www/` directory is new weight on a 4 MB board. Running
+`tools/build_www.py` and copying only `index.html.gz` rather than both
+files keeps it to about 8 KB.
+
+**Bootloader.** CircuitPython 10 on an ESP32-S2 or S3 with 4 MB flash
+needs TinyUF2 0.33.0 or later. Update the bootloader before the firmware,
+or the board will not take it.
+
+If something does go wrong on a new board, the start-up line is the first
+thing to read: no HID devices means it cannot act as a keyboard at all,
+and nothing else is worth debugging until that is fixed.
+
 ## 📋 Prerequisites
 
 Before getting started, you'll need:

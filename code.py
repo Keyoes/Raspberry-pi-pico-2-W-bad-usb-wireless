@@ -15,6 +15,7 @@ led = badusb_core.led
 # Short blinks: still plainly three of them, but 0.48 s rather than the
 # 1.2 s the old 0.2/0.2 timing cost before anything else could start.
 badusb_core.blink(3, on=0.08, off=0.08)
+badusb_core.report_board()   # one line on serial; useful on a new board
 
 WIFI_SSID = "YourWiFiName"
 WIFI_PASSWORD = "YourWiFiPassword"

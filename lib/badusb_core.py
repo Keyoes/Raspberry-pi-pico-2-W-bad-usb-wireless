@@ -555,6 +555,33 @@ def paced_keyboard(keyboard_class, devices, hold=KEY_HOLD_SECONDS):
     return PacedKeyboard(devices)
 
 
+def report_board():
+    """Print what this board brought to the party, once, at start-up.
+
+    Worth having when moving the firmware to a board it has not run on.
+    The two things that decide whether it works at all are whether
+    usb_hid has a keyboard to offer and how much RAM is left after the
+    WiFi stack; an ESP32-S2 has roughly 320 KB against the Pico 2 W's
+    520 KB, so headroom that was comfortable on one can be tight on the
+    other. It shows on the serial console and costs one line.
+    """
+    try:
+        import usb_hid
+
+        devices = len(tuple(usb_hid.devices))
+    except Exception:
+        devices = 0
+
+    free = gc.mem_free()
+    print(f"badusb_core: {devices} HID device(s), {free} bytes free")
+
+    if devices == 0:
+        print("  no HID devices: this board cannot act as a keyboard. "
+              "Check boot.py ran and that the board has native USB.")
+
+    return {"hid_devices": devices, "free_memory": free}
+
+
 def usb_host_connected():
     """Whether a USB host is attached at all.
 
