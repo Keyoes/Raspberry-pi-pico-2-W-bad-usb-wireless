@@ -528,10 +528,10 @@ class TestAdaptivePolling(CoreTestCase):
     def test_backs_off_while_idle(self):
         pauses = self.run_loop("no_request")
         self.assertLess(pauses[0], pauses[-1], "an idle loop should slow down")
-        self.assertEqual(pauses[-1], 0.05, "and settle at the idle ceiling")
+        self.assertEqual(pauses[-1], 0.1, "and settle at the idle ceiling")
 
     def test_never_exceeds_the_idle_ceiling(self):
-        self.assertTrue(all(p <= 0.05 for p in self.run_loop("no_request", 40)))
+        self.assertTrue(all(p <= 0.1 for p in self.run_loop("no_request", 40)))
 
     def test_stays_tight_while_requests_arrive(self):
         pauses = self.run_loop("request_handled_response_sent")

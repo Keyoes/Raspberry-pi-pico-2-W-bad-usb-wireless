@@ -588,7 +588,7 @@ IDLE_POLL_STATUSES = ("no_request", "connection_timed_out")
 
 
 def serve_forever(server, setup_server, wifi_check_interval=60,
-                  poll_pause=0.002, idle_poll_pause=0.05):
+                  poll_pause=0.002, idle_poll_pause=0.1):
     """Poll the HTTP server, keeping the WiFi link up, until something fatal.
 
     The pause is only a yield -- poll() does not block -- so the original
@@ -599,7 +599,10 @@ def serve_forever(server, setup_server, wifi_check_interval=60,
     poll() reports whether it had a request, so the loop stays tight while
     something is going on and backs off when idle. The cost is at worst
     idle_poll_pause of extra latency on the first request after a quiet
-    spell, and 50 ms is not noticeable in a browser.
+    spell. That ceiling is set to the original fixed pause of 0.1 s on
+    purpose: idle, the board wakes no more often than it used to, and busy
+    it answers fifty times quicker. Better on both counts rather than
+    trading one for the other.
 
     A library version whose poll() reports nothing useful falls back to the
     fixed pause rather than guessing.
