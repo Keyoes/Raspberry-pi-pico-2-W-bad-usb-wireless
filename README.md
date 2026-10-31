@@ -54,7 +54,7 @@ If your Raspberry Pi Pico 2 W already has MicroPython or other firmware installe
 2. Extract the bundle and copy the following libraries to the `lib` folder on your CIRCUITPY drive:
    - adafruit_hid (folder)
    - adafruit_httpserver (folder)
-   - adafruit_request.mpy
+   - adafruit_requests.mpy
    - adafruit_ticks.mpy
    - adafruit_connection_manager.mpy
 

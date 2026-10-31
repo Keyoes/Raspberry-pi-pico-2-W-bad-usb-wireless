@@ -1,0 +1,22 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+
+# CircuitPython / editor leftovers
+.Trashes
+.fseventsd/
+.metadata_never_index
+._*
+.DS_Store
+Thumbs.db
+
+# Local configuration and secrets (WiFi credentials, web password)
+settings.toml
+
+# Runtime state written by the device
+badusb_script.txt
+
+# IDEs
+.vscode/
+.idea/
+*.swp

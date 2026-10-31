@@ -1,6 +1,5 @@
 import os, time, json, board, digitalio, microcontroller, wifi, socketpool
 import adafruit_httpserver.server as httpserver
-import adafruit_httpserver.request as httprequest
 import adafruit_httpserver.response as httpresponse
 import adafruit_httpserver.methods as httpmethods
 from adafruit_hid.keyboard import Keyboard
@@ -71,16 +70,30 @@ keyboard = Keyboard(usb_hid.devices[0])
 keyboard_layout = KeyboardLayoutUS(keyboard)
 script_in_memory = None
 
-def check_wifi_connection():
-    if not wifi.radio.connected:
-        print("WiFi connection lost. Attempting to reconnect...")
-        connect_to_wifi()
-        return wifi.radio.connected
-    return True
+def check_wifi_connection(max_attempts=2):
+    """Reconnect if the link dropped, and report whether we are online.
 
-def connect_to_wifi():
-    max_attempts, retry_delay, attempt = 10, 5, 0
-    
+    Deliberately bounded: this is called from the main serving loop, so an
+    unbounded retry here stops the device answering HTTP at all for as long
+    as the network is down.
+    """
+    if wifi.radio.connected:
+        return True
+
+    print("WiFi connection lost. Attempting to reconnect...")
+    connect_to_wifi(max_attempts=max_attempts, reset_on_failure=False)
+    return wifi.radio.connected
+
+def connect_to_wifi(max_attempts=0, retry_delay=5, reset_on_failure=True):
+    """Bring up the WiFi link.
+
+    max_attempts=0 retries forever, which is what we want at boot since
+    there is nothing else for the board to do until it is online. A positive
+    value bounds the attempts and returns False instead of blocking, for
+    callers that have to stay responsive.
+    """
+    attempt = 0
+
     while True:
         attempt += 1
         print(f"Connecting to {WIFI_SSID}... (Attempt {attempt})")
@@ -110,37 +123,49 @@ def connect_to_wifi():
             time.sleep(1)
             led.value = False
             
-            if attempt % max_attempts == 0:
-                print(f"Reached {max_attempts} consecutive failed attempts.")
+            if max_attempts and attempt >= max_attempts:
+                print(f"Giving up after {attempt} attempt(s).")
+                return False
+
+            if reset_on_failure and attempt % 10 == 0:
+                print(f"Reached {attempt} consecutive failed attempts; resetting.")
                 for _ in range(5):
                     led.value = True
                     time.sleep(0.1)
                     led.value = False
                     time.sleep(0.1)
-                
-                try:
-                    microcontroller.reset()
-                except:
-                    pass
-            
+
+                microcontroller.reset()
+
             print(f"Retrying in {retry_delay} seconds...")
             time.sleep(retry_delay)
             
 def save_script(script_content):
+    """Store the script and report honestly where it ended up.
+
+    Returns a description of where it was stored. The RAM fallback used to
+    return True just like a successful write, so callers reported "uploaded
+    successfully" for a script that never reached the filesystem and would
+    be lost on the next reset.
+    """
+    global script_in_memory
+
     try:
         try:
             os.remove(SCRIPT_PATH)
         except OSError:
             pass
-        
+
         with open(SCRIPT_PATH, "w") as f:
             f.write(script_content)
-        return True
+
+        # Drop any stale RAM copy so it cannot shadow what is on disk.
+        script_in_memory = None
+        return "saved to flash"
     except Exception as e:
-        print(f"Error saving script: {e}")
-        global script_in_memory
+        print(f"Could not write {SCRIPT_PATH}: {e}; keeping the script in RAM only.")
         script_in_memory = script_content
-        return True
+        return "kept in RAM only, will be lost on reset"
     
 def parse_key_combo(key_combo):
     keys = []
@@ -253,11 +278,12 @@ def execute_script():
         return False
 def setup_server():
     pool = socketpool.SocketPool(wifi.radio)
-    server = httpserver.Server(pool, "/static")
-    
-    payload_history = []
-    wifi_status = {"connected": True, "ip": str(wifi.radio.ipv4_address) if wifi.radio.connected else "Not connected"}
-    
+    # No root_path: every response is produced by a route below, and pointing
+    # it at a directory would expose the device's files (settings.toml, the
+    # stored script) over HTTP. "/static" did not exist in the first place.
+    server = httpserver.Server(pool)
+
+
     @server.route("/", httpmethods.GET)
     def base(request):
         html = """<!DOCTYPE html>
@@ -1056,10 +1082,8 @@ def setup_server():
     def upload_script(request):
         try:
             content = request.body.decode("utf-8")
-            if save_script(content):
-                return httpresponse.Response(request, "Script uploaded successfully")
-            else:
-                return httpresponse.Response(request, "Failed to save script", status=500)
+            detail = save_script(content)
+            return httpresponse.Response(request, f"Script uploaded: {detail}")
         except Exception as e:
             return httpresponse.Response(request, f"Error: {str(e)}", status=500)
     
@@ -1080,7 +1104,9 @@ def setup_server():
             status = {
                 "connected": is_connected,
                 "ip": str(wifi.radio.ipv4_address) if is_connected else "Not connected",
-                "timestamp": time.time()
+                # monotonic, not time(): the board has no RTC, so time.time()
+                # here was not a wall clock. This is seconds since boot.
+                "uptime_s": time.monotonic()
             }
             headers = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
             return httpresponse.Response(request, json.dumps(status),
@@ -1090,7 +1116,7 @@ def setup_server():
             return httpresponse.Response(request, json.dumps({
                 "connected": False,
                 "error": str(e),
-                "timestamp": time.time()
+                "uptime_s": time.monotonic()
             }), content_type="application/json")
     
     @server.route("/api/badusb", httpmethods.POST)
@@ -1103,13 +1129,13 @@ def setup_server():
                 action = data.get("action", "")
                 
                 if action == "upload" and "script" in data:
-                    if save_script(data["script"]):
-                        return httpresponse.Response(request, '{"status": "success", "message": "Script uploaded"}', 
-                                                  content_type="application/json")
-                    else:
-                        return httpresponse.Response(request, '{"status": "error", "message": "Failed to save script"}', 
-                                                  status=500, content_type="application/json")
-                
+                    detail = save_script(data["script"])
+                    return httpresponse.Response(
+                        request,
+                        json.dumps({"status": "success", "message": f"Script uploaded: {detail}"}),
+                        content_type="application/json",
+                    )
+
                 elif action == "execute":
                     if execute_script():
                         return httpresponse.Response(request, '{"status": "success", "message": "Script executed"}', 
@@ -1123,16 +1149,19 @@ def setup_server():
                                               status=400, content_type="application/json")
                 
             except ValueError:
-                if save_script(content):
-                    if execute_script():
-                        return httpresponse.Response(request, "Script uploaded and executed successfully")
-                    else:
-                        return httpresponse.Response(request, "Script uploaded but execution failed", status=500)
-                else:
-                    return httpresponse.Response(request, "Failed to save script", status=500)
+                detail = save_script(content)
+                if execute_script():
+                    return httpresponse.Response(
+                        request, f"Script uploaded ({detail}) and executed successfully"
+                    )
+                return httpresponse.Response(
+                    request, f"Script uploaded ({detail}) but execution failed", status=500
+                )
                 
         except Exception as e:
-            return httpresponse.Response(request, f'{{"status": "error", "message": "{str(e)}"}}', 
+            # json.dumps, not an f-string: an exception message containing a
+            # quote or backslash used to produce invalid JSON here.
+            return httpresponse.Response(request, json.dumps({"status": "error", "message": str(e)}),
                                       status=500, content_type="application/json")
     
     print("Starting server on port 80...")
@@ -1142,13 +1171,36 @@ def setup_server():
     except Exception as e:
         print(f"Server error: {e}")
         return None
+
+
+def restart_server(server):
+    """Stop the running server before starting a fresh one.
+
+    Without the stop, setup_server() tried to bind port 80 while the old
+    socket still held it, so start() raised, setup_server() returned None,
+    and every caller fell through to microcontroller.reset(). The whole
+    recovery path rebooted the board instead of recovering.
+    """
+    if server is not None:
+        try:
+            server.stop()
+        except Exception as e:
+            print(f"Could not stop the old server cleanly: {e}")
+
+    return setup_server()
+
+
 def main():
     connect_to_wifi()
     server = setup_server()
-    
+
     last_wifi_check = time.monotonic()
     wifi_check_interval = 60
-    
+    # The HTTP interface is only as responsive as this loop runs. poll() does
+    # not block, so this pause is purely a yield; at the old 0.1 it added up
+    # to 100 ms to every request for no benefit.
+    poll_pause = 0.01
+
     if server:
         led.value = True
         time.sleep(1)
@@ -1162,30 +1214,35 @@ def main():
                     print(f"Error during server poll: {e}")
                     if check_wifi_connection():
                         print("Trying to restart server...")
-                        server = setup_server()
+                        server = restart_server(server)
                         if not server:
                             microcontroller.reset()
-                
+
                 current_time = time.monotonic()
                 if current_time - last_wifi_check > wifi_check_interval:
-                    print("Running scheduled WiFi connection check...")
-                    if not check_wifi_connection():
-                        print("Server may need restart after WiFi reconnection...")
-                        server = setup_server()
+                    was_offline = not wifi.radio.connected
+                    if check_wifi_connection() and was_offline:
+                        # Rebuild the socket only after an actual reconnect:
+                        # the IP may have changed, so the listener is stale.
+                        # This condition used to be inverted, restarting the
+                        # server precisely when the reconnect had failed and
+                        # leaving the stale socket in place when it worked.
+                        print("Reconnected; rebuilding the server socket.")
+                        server = restart_server(server)
                         if not server:
                             microcontroller.reset()
                     last_wifi_check = time.monotonic()
-                
-                time.sleep(0.1)
-                
+
+                time.sleep(poll_pause)
+
         except Exception as e:
             print(f"Server polling error: {e}")
             check_wifi_connection()
             try:
-                server = setup_server()
+                server = restart_server(server)
                 if not server:
                     microcontroller.reset()
-            except:
+            except Exception:
                 microcontroller.reset()
     else:
         for _ in range(5):
