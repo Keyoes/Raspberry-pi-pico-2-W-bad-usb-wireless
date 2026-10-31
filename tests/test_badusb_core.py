@@ -587,5 +587,111 @@ class TestAdaptivePolling(CoreTestCase):
         self.assertTrue(all(p == 0.002 for p in pauses))
 
 
+class TestKeyHold(CoreTestCase):
+    """A keypress the host never polls is a keypress that did not happen.
+
+    USB HID is polled once per 1 ms frame and the device gets no
+    acknowledgement, so a press followed immediately by a release can land
+    entirely between two polls: the host reads the endpoint once, sees
+    nothing held, and the character is lost. This is the "characters skip
+    at low delays" behaviour, and it is why a faster implementation loses
+    more of them rather than fewer.
+    """
+
+    POLL_INTERVAL = 0.001
+
+    def build(self, hold):
+        """A fake keyboard on a fake clock, with a host polling at 1 ms."""
+        clock = {"t": 0.0}
+        reports = []          # (time, keys held) each time the report changes
+        polls = []            # what a host polling every 1 ms would observe
+
+        class Clock:
+            @staticmethod
+            def sleep(seconds):
+                clock["t"] += seconds
+
+            @staticmethod
+            def monotonic():
+                return clock["t"]
+
+        self.core.time = Clock
+
+        class BaseKeyboard:
+            def __init__(self, devices):
+                self.held = set()
+
+            def press(self, key):
+                self.held.add(key)
+                reports.append((clock["t"], frozenset(self.held)))
+
+            def release_all(self):
+                self.held.clear()
+                reports.append((clock["t"], frozenset()))
+
+        keyboard = self.core.paced_keyboard(BaseKeyboard, ("dev",), hold=hold)
+
+        def host_polls():
+            """What the host reads: the last report before each 1 ms tick."""
+            polls.clear()
+            end = reports[-1][0] if reports else 0.0
+            tick = 0.0
+            while tick <= end + self.POLL_INTERVAL:
+                visible = frozenset()
+                for at, keys in reports:
+                    if at <= tick:
+                        visible = keys
+                polls.append(visible)
+                tick += self.POLL_INTERVAL
+            return polls
+
+        return keyboard, host_polls
+
+    def type_one_key(self, keyboard):
+        """What adafruit_hid's _write does: press, then release at once."""
+        keyboard.press("A")
+        keyboard.release_all()
+
+    def test_without_a_hold_the_host_can_miss_the_key(self):
+        keyboard, host_polls = self.build(hold=0)
+        self.type_one_key(keyboard)
+
+        self.assertTrue(
+            all("A" not in seen for seen in host_polls()),
+            "press and release in the same frame should be invisible; "
+            "if this starts passing the simulation is wrong, not the fix",
+        )
+
+    def test_holding_the_key_makes_it_visible(self):
+        keyboard, host_polls = self.build(hold=self.core.KEY_HOLD_SECONDS)
+        self.type_one_key(keyboard)
+
+        self.assertTrue(any("A" in seen for seen in host_polls()),
+                        "the host should poll at least once while held")
+
+    def test_the_hold_spans_several_poll_frames(self):
+        keyboard, host_polls = self.build(hold=self.core.KEY_HOLD_SECONDS)
+        self.type_one_key(keyboard)
+
+        frames = sum(1 for seen in host_polls() if "A" in seen)
+        self.assertGreaterEqual(
+            frames, 2,
+            "one frame of margin is not enough when the host polls late",
+        )
+
+    def test_the_key_is_still_released_afterwards(self):
+        keyboard, host_polls = self.build(hold=self.core.KEY_HOLD_SECONDS)
+        self.type_one_key(keyboard)
+
+        self.assertEqual(host_polls()[-1], frozenset(),
+                         "a key left held would repeat on the target")
+
+    def test_hold_zero_restores_the_original_behaviour(self):
+        keyboard, _polls = self.build(hold=0)
+        before = self.core.time.monotonic()
+        self.type_one_key(keyboard)
+        self.assertEqual(self.core.time.monotonic(), before)
+
+
 if __name__ == "__main__":
     unittest.main()

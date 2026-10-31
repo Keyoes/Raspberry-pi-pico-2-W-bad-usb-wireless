@@ -98,7 +98,9 @@ COMMAND_SHORTCUTS = {
     "SNAP_LEFT": "GUI+LEFT", "SNAP_RIGHT": "GUI+RIGHT"
 }
 
-keyboard = Keyboard(usb_hid.devices)
+# Holds each key for a few USB frames so the host actually sees it;
+# see badusb_core.KEY_HOLD_SECONDS for why characters were dropped.
+keyboard = badusb_core.paced_keyboard(Keyboard, usb_hid.devices)
 keyboard_layout = KeyboardLayoutUS(keyboard)
 mouse = Mouse(usb_hid.devices)
 

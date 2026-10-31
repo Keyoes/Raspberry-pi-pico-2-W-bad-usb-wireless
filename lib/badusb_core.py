@@ -523,6 +523,38 @@ def status_snapshot():
     }
 
 
+# How long a key is held down before being released. USB HID is polled by
+# the host once per 1 ms frame, and the device is never told whether a
+# report was read. adafruit_hid's _write() presses a key and calls
+# release_all() immediately, so when both reports land between two polls
+# the host sees only the final state -- nothing pressed -- and the
+# character is silently lost. Holding for several frames gives the host
+# something to see. This is why characters "skip" at low delays, and why a
+# faster implementation would drop more of them, not fewer.
+KEY_HOLD_SECONDS = 0.004
+
+
+def paced_keyboard(keyboard_class, devices, hold=KEY_HOLD_SECONDS):
+    """Build a Keyboard that holds each key before releasing it.
+
+    Done by wrapping release_all() rather than reimplementing the layout's
+    _write(): the keycode, shift and AltGr handling stays the library's,
+    so this does not drift when the library changes. The pause lands
+    between the last press and the release, which is the gap that was
+    missing.
+
+    hold=0 restores the original behaviour.
+    """
+
+    class PacedKeyboard(keyboard_class):
+        def release_all(self):
+            if hold:
+                time.sleep(hold)
+            super().release_all()
+
+    return PacedKeyboard(devices)
+
+
 def parse_key_combo(key_combo):
     keys = []
     if "+" in key_combo:

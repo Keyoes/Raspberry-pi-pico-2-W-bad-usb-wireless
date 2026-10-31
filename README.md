@@ -363,28 +363,39 @@ ENTER
 
 ## Known Issues
 
-### Bug: CHAR_DELAY should have a minimum of 30ms to prevent data loss
+### Dropped characters: why they happened, and what changed
 
-#### Description
-When executing BadUSB payloads through the KEYOES controller, the current default character delay of 10ms (`char_delay = 0.01` in the code) causes reliability issues. Characters are frequently dropped or misinterpreted during payload execution, especially with longer commands or when targeting systems under load.
+Characters used to go missing during a payload, more often with a low
+`CHAR_DELAY`, and the usual advice was to raise it to 30 ms. That treated
+the symptom. The cause was elsewhere.
 
-#### Current Implementation
-In the current code (`execute_script()` function), the default setting is:
-```python
-char_delay = 0.01  # 10ms between characters
-```
+USB HID is polled by the host once per 1 ms frame, and the device is never
+told whether a report was read. `adafruit_hid` presses a key and calls
+`release_all()` immediately, with nothing in between, so when both reports
+land between two polls the host reads the endpoint once, sees nothing
+held, and the character never existed as far as it is concerned. It was
+not dropped in transit — it was overwritten before anyone looked.
 
-The `CHAR_DELAY` command exists but has no minimum value enforcement.
+`CHAR_DELAY` could not fix this, because it is the pause *between*
+characters; the press and release within one character stayed back to
+back. Neither could the `delay` argument to `write()`, which sleeps after
+`release_all()` for the same reason.
 
-#### Recommended Fix
-Always use `CHAR_DELAY 30` (or higher) at the beginning of your scripts to ensure reliable execution. For example:
+The keyboard now holds each key for `KEY_HOLD_SECONDS` (4 ms, four poll
+frames) before releasing it, which is done by wrapping `release_all()` so
+the library keeps ownership of the keycode, shift and AltGr handling.
+`tests/test_badusb_core.py` simulates a host polling at 1 ms and checks
+both directions: without the hold the key is invisible, with it the host
+sees it across several frames and it is still released afterwards.
 
-```
-REM Set a safer character delay first
-CHAR_DELAY 30
-STRING echo This script will execute reliably
-ENTER
-```
+Set `KEY_HOLD_SECONDS = 0` in `lib/badusb_core.py` for the old behaviour.
+Raising `CHAR_DELAY` is still worth doing on a slow or loaded target — it
+paces the host's input handling, which is a different bottleneck from the
+polling one.
+
+This is also the clearest reason a rewrite in a faster language would not
+help here: it would push the two reports closer together and lose more
+characters, not fewer.
 
 ### Space-separated key combinations only send their first key
 

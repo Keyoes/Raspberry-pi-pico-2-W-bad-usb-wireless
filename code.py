@@ -66,7 +66,9 @@ KEY_MAPPING = {
     "U": Keycode.U, "V": Keycode.V, "W": Keycode.W, "X": Keycode.X, "Y": Keycode.Y, "Z": Keycode.Z
 }
 
-keyboard = Keyboard(usb_hid.devices[0])
+# Holds each key for a few USB frames so the host actually sees it;
+# see badusb_core.KEY_HOLD_SECONDS for why characters were dropped.
+keyboard = badusb_core.paced_keyboard(Keyboard, usb_hid.devices)
 keyboard_layout = KeyboardLayoutUS(keyboard)
 
 badusb_core.configure(
