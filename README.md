@@ -544,6 +544,7 @@ Mouse_control_test/code.py   same, plus mouse commands
 lib/badusb_core.py           shared: LED, WiFi, storage, validation, serving loop
 www/index.html               the web page, served from the device's /www
 tools/build_www.py           pre-compresses the page to .html.gz
+tools/check_versions.py      vendored libraries vs current releases
 tests/                       runs on a desktop, no board required
 tests/boot_simulation.py     executes both builds against stubs
 .github/workflows/tests.yml  runs all of it on every push
@@ -635,6 +636,47 @@ Two things measured and deliberately not done:
   CircuitPython version exactly, and a mismatch stops the board booting.
   Worth doing yourself if you are short on RAM, once you know your version;
   delete the `.py` if you add the `.mpy`, or they conflict.
+
+### Versions and compatibility
+
+`lib/` vendors a copy of the Adafruit bundle so the project works without
+hunting for libraries, which also means it goes stale quietly. To see how
+far behind it is:
+
+```bash
+python3 tools/check_versions.py
+```
+
+At the time of writing:
+
+| library | vendored here | current |
+|---|---|---|
+| adafruit_hid | 6.1.5 | 6.1.10 |
+| adafruit_httpserver | 4.6.2 | 4.8.2 |
+| adafruit_requests | 4.1.10 | 4.1.18 |
+| adafruit_ticks | 1.1.2 | 1.1.7 |
+| adafruit_connection_manager | 3.1.3 | 3.1.8 |
+
+All are patch or minor updates within the same major version, so nothing
+here is urgent.
+
+**CircuitPython.** `flash_board/` ships 9.2.7; the current stable for the
+Pico 2 W is
+[10.2.1](https://circuitpython.org/board/raspberry_pi_pico2_w/). The
+`.mpy` format
+[did not change between 9 and 10](https://circuitpython.org/libraries), so
+the vendored libraries load on either — the format changed at 9, which is
+why 8.x libraries do not. All the files in `lib/` are ABI 6, and
+`check_versions.py` reports this, since a mismatch there is the failure
+that stops a board rather than merely degrading it.
+
+**If you do update the libraries,** four APIs this firmware depends on
+were verified against the vendored copies rather than assumed, and should
+be re-checked: `Server.request_buffer_size`, the `"no_request"` poll
+status, `FileResponse` accepting `content_type` and `headers`, and
+`Keyboard.led_status`. `check_versions.py` checks all four and names what
+each is for, so a missing one is visible before you flash rather than
+after.
 
 ### Running the tests
 
