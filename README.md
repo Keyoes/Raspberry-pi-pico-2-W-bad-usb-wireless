@@ -93,9 +93,13 @@ If your Raspberry Pi Pico 2 W already has MicroPython or other firmware installe
 #### LED Status Indicators
 - **3 quick blinks at start**: System initialization
 - **Rapid blinking (10 times)**: WiFi connection failed
-- **One long blink**: Server started successfully
+- **One longer blink**: Server started successfully
 - **5 quick blinks**: Server failed to start
 - **LED on during command execution**: Command being executed
+
+The start-up and server-ready signals are deliberately brief. They used to
+hold the board for 2.2 seconds in total before it could answer its first
+request, which is now 0.78 seconds for the same sequence.
 
 ## 📱 Connecting to the Web Interface
 

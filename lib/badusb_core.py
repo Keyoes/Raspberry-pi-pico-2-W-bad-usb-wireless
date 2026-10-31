@@ -466,17 +466,24 @@ def page_response(request, filename="index.html", root=DEFAULT_WWW_ROOT):
         if request is not None and _if_none_match(request) == etag:
             return _response.Response(request, "", status=304, headers=headers)
 
+    # Collect *before* the read, not after. The page is the biggest single
+    # allocation this firmware makes, so the point of collecting is to have
+    # the room to read it; doing it afterwards only tidied up once the risky
+    # part had already succeeded.
+    gc.collect()
+
     try:
         with open(gz_path, "rb") as f:
             body = f.read()
     except OSError:
         return _response.FileResponse(request, filename, root_path=root, headers=headers)
+    except MemoryError:
+        # Out of contiguous RAM for the compressed page: fall back to the
+        # streamed plain file, which never holds the whole thing at once.
+        print("Not enough memory for the gzipped page; streaming the plain file.")
+        return _response.FileResponse(request, filename, root_path=root, headers=headers)
 
     headers["Content-Encoding"] = "gzip"
-
-    # The page is the biggest allocation this firmware makes per request;
-    # hand the memory back now rather than at some arbitrary later point.
-    gc.collect()
 
     return _response.Response(
         request,
@@ -576,19 +583,42 @@ def restart_server(server, setup_server):
     return setup_server()
 
 
-def serve_forever(server, setup_server, wifi_check_interval=60, poll_pause=0.01):
+# Statuses adafruit_httpserver's poll() reports when it had nothing to do.
+IDLE_POLL_STATUSES = ("no_request", "connection_timed_out")
+
+
+def serve_forever(server, setup_server, wifi_check_interval=60,
+                  poll_pause=0.002, idle_poll_pause=0.05):
     """Poll the HTTP server, keeping the WiFi link up, until something fatal.
 
-    ``poll_pause`` is only a yield -- ``poll()`` does not block -- so the old
-    value of 0.1 added up to 100 ms of latency to every request for no
-    benefit.
+    The pause is only a yield -- poll() does not block -- so the original
+    0.1 added up to 100 ms of latency to every request for no benefit.
+
+    It also adapts. Polling flat out means the board wakes hundreds of times
+    a second to be told nothing happened, which on a battery is pure waste.
+    poll() reports whether it had a request, so the loop stays tight while
+    something is going on and backs off when idle. The cost is at worst
+    idle_poll_pause of extra latency on the first request after a quiet
+    spell, and 50 ms is not noticeable in a browser.
+
+    A library version whose poll() reports nothing useful falls back to the
+    fixed pause rather than guessing.
     """
     last_wifi_check = time.monotonic()
+    pause = poll_pause
 
     try:
         while True:
             try:
-                server.poll()
+                status = server.poll()
+
+                if status is None:
+                    # No signal from this version; keep a fixed pause.
+                    pause = poll_pause
+                elif status in IDLE_POLL_STATUSES:
+                    pause = min(pause * 2, idle_poll_pause)
+                else:
+                    pause = poll_pause
             except Exception as e:
                 print(f"Error during server poll: {e}")
                 if check_wifi_connection():
@@ -611,7 +641,7 @@ def serve_forever(server, setup_server, wifi_check_interval=60, poll_pause=0.01)
                         microcontroller.reset()
                 last_wifi_check = time.monotonic()
 
-            time.sleep(poll_pause)
+            time.sleep(pause)
 
     except Exception as e:
         print(f"Server polling error: {e}")

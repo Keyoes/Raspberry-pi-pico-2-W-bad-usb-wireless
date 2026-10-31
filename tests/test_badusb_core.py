@@ -483,5 +483,105 @@ class TestServeForever(CoreTestCase):
         )
 
 
+class TestAdaptivePolling(CoreTestCase):
+    """The loop should back off when nothing is happening and tighten up
+    the moment it is, instead of waking hundreds of times a second to be
+    told there was no request."""
+
+    def run_loop(self, poll_result, iterations=12):
+        pauses = []
+
+        class Clock:
+            t = 0.0
+
+            @classmethod
+            def sleep(cls, seconds):
+                pauses.append(seconds)
+                cls.t += seconds
+
+            @classmethod
+            def monotonic(cls):
+                return cls.t
+
+        self.core.time = Clock
+
+        class Server:
+            def __init__(self):
+                self.polls = 0
+
+            def poll(self):
+                self.polls += 1
+                if self.polls > iterations:
+                    raise SystemExit
+                return poll_result
+
+            def stop(self):
+                pass
+
+        try:
+            self.core.serve_forever(Server(), lambda: Server())
+        except SystemExit:
+            pass
+
+        return pauses
+
+    def test_backs_off_while_idle(self):
+        pauses = self.run_loop("no_request")
+        self.assertLess(pauses[0], pauses[-1], "an idle loop should slow down")
+        self.assertEqual(pauses[-1], 0.05, "and settle at the idle ceiling")
+
+    def test_never_exceeds_the_idle_ceiling(self):
+        self.assertTrue(all(p <= 0.05 for p in self.run_loop("no_request", 40)))
+
+    def test_stays_tight_while_requests_arrive(self):
+        pauses = self.run_loop("request_handled_response_sent")
+        self.assertTrue(all(p == 0.002 for p in pauses),
+                        "a busy loop must not back off")
+
+    def test_a_request_resets_the_backoff(self):
+        """Idle for a while, then a request: the next pause is tight again."""
+        results = ["no_request"] * 8 + ["request_handled_response_sent"] * 3
+        step = iter(results)
+        pauses = []
+
+        class Clock:
+            t = 0.0
+
+            @classmethod
+            def sleep(cls, seconds):
+                pauses.append(seconds)
+                cls.t += seconds
+
+            @classmethod
+            def monotonic(cls):
+                return cls.t
+
+        self.core.time = Clock
+
+        class Server:
+            def poll(self):
+                try:
+                    return next(step)
+                except StopIteration:
+                    raise SystemExit
+
+            def stop(self):
+                pass
+
+        try:
+            self.core.serve_forever(Server(), lambda: Server())
+        except SystemExit:
+            pass
+
+        self.assertGreater(pauses[7], 0.002, "should have backed off while idle")
+        self.assertEqual(pauses[8], 0.002, "and snapped back on the first request")
+
+    def test_an_uninformative_poll_keeps_the_fixed_pause(self):
+        """Older libraries whose poll() returns nothing must not be guessed
+        at; the loop keeps a steady pause instead."""
+        pauses = self.run_loop(None)
+        self.assertTrue(all(p == 0.002 for p in pauses))
+
+
 if __name__ == "__main__":
     unittest.main()

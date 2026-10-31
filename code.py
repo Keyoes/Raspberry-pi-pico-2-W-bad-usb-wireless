@@ -12,7 +12,9 @@ import usb_hid
 import badusb_core
 
 led = badusb_core.led
-badusb_core.blink(3)
+# Short blinks: still plainly three of them, but 0.48 s rather than the
+# 1.2 s the old 0.2/0.2 timing cost before anything else could start.
+badusb_core.blink(3, on=0.08, off=0.08)
 
 WIFI_SSID = "YourWiFiName"
 WIFI_PASSWORD = "YourWiFiPassword"
@@ -324,8 +326,12 @@ def main():
     server = setup_server()
 
     if server:
+        # One long blink to say the server is up. This runs before
+        # serve_forever, so every millisecond here is a millisecond the
+        # server is bound but not yet answering; 0.3 s reads the same and
+        # gets us listening sooner.
         led.value = True
-        time.sleep(1)
+        time.sleep(0.3)
         led.value = False
 
         badusb_core.serve_forever(server, setup_server)
