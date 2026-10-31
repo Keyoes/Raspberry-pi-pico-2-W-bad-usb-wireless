@@ -1,0 +1,419 @@
+"""Tests for lib/badusb_core.py, runnable without a board.
+
+    python3 -m unittest discover -s tests
+
+These cover the logic that is easy to get wrong and impossible to see from
+the outside: where a script actually got stored, what the validator makes of
+a line, whether the dry run agrees with the executor's dispatch order, and
+whether the serving loop rebuilds its socket at the right moment.
+
+Hardware behaviour is out of scope. USB HID, the radio and the HTTP server
+are stubbed, so a green run here means the logic holds -- not that the
+firmware works on a Pico.
+"""
+
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
+sys.path.insert(0, os.path.dirname(__file__))
+
+import circuitpython_stubs as stubs  # noqa: E402
+
+
+class CoreTestCase(unittest.TestCase):
+    """Fresh stubs, a fresh module and a temporary filesystem per test."""
+
+    def setUp(self):
+        self.env = stubs.install()
+        import badusb_core
+
+        self.core = badusb_core
+        self.keyboard = stubs.FakeKeyboard()
+        self.tmp = tempfile.mkdtemp()
+        stubs.instant_clock(self.core)
+
+        self.core.configure(
+            ssid="TestNet",
+            password="secret",
+            keyboard=self.keyboard,
+            keyboard_layout=None,
+            key_mapping=stubs.KEY_MAPPING,
+            script_path=os.path.join(self.tmp, "active.txt"),
+            script_dir=os.path.join(self.tmp, "scripts"),
+        )
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+
+class TestStatusLed(CoreTestCase):
+    def test_uses_board_led_when_present(self):
+        self.assertEqual(self.core.init_status_led().pin, "GP25")
+
+    def test_falls_back_to_a_stub_when_absent(self):
+        stubs.install(with_led=False)
+        import badusb_core
+
+        led = badusb_core.init_status_led()
+        self.assertEqual(type(led).__name__, "_NoStatusLed")
+        led.value = True  # must not raise
+        badusb_core.blink(2, on=0, off=0)
+
+
+class TestScriptStorage(CoreTestCase):
+    def test_reports_flash_when_the_write_lands(self):
+        self.assertEqual(self.core.save_script("STRING hi\n"), "saved to flash")
+        self.assertEqual(self.core.load_script_lines(), ["STRING hi\n"])
+
+    def test_reports_ram_when_the_write_fails(self):
+        self.core.configure(
+            ssid="TestNet", password="secret", keyboard=self.keyboard,
+            keyboard_layout=None, key_mapping=stubs.KEY_MAPPING,
+            script_path="/does/not/exist/active.txt",
+            script_dir=os.path.join(self.tmp, "scripts"),
+        )
+        detail = self.core.save_script("STRING fallback")
+        self.assertIn("RAM only", detail)
+        # Still runnable, just not durable -- which is why the wording differs.
+        self.assertEqual(self.core.load_script_lines(), ["STRING fallback"])
+
+    def test_no_script_reads_as_none(self):
+        self.assertIsNone(self.core.load_script_lines())
+        self.assertIsNone(self.core.read_script())
+
+    def test_successful_write_clears_the_stale_ram_copy(self):
+        self.core.configure(
+            ssid="n", password="p", keyboard=self.keyboard, keyboard_layout=None,
+            key_mapping=stubs.KEY_MAPPING, script_path="/does/not/exist/x.txt",
+            script_dir=os.path.join(self.tmp, "scripts"),
+        )
+        self.core.save_script("OLD")
+        good = os.path.join(self.tmp, "active.txt")
+        self.core.configure(
+            ssid="n", password="p", keyboard=self.keyboard, keyboard_layout=None,
+            key_mapping=stubs.KEY_MAPPING, script_path=good,
+            script_dir=os.path.join(self.tmp, "scripts"),
+        )
+        self.core.save_script("NEW")
+        os.remove(good)
+        self.assertIsNone(self.core.load_script_lines())
+
+
+class TestScriptLibrary(CoreTestCase):
+    def test_save_list_load_delete(self):
+        self.core.save_named_script("payload-1", "STRING one\n")
+        self.core.save_named_script("payload-2", "STRING two\n")
+        self.assertEqual(self.core.list_scripts(), ["payload-1", "payload-2"])
+        self.assertEqual(self.core.load_named_script("payload-1"), "STRING one\n")
+        self.assertTrue(self.core.delete_named_script("payload-1"))
+        self.assertEqual(self.core.list_scripts(), ["payload-2"])
+
+    def test_missing_script_reads_as_none_and_deletes_as_false(self):
+        self.assertIsNone(self.core.load_named_script("nope"))
+        self.assertFalse(self.core.delete_named_script("nope"))
+
+    def test_empty_library_lists_nothing(self):
+        self.assertEqual(self.core.list_scripts(), [])
+
+    def test_rejects_names_that_could_escape_the_directory(self):
+        for bad in ["../boot.py", "..", ".hidden", "a/b", "a\\b", "", "x" * 49,
+                    "with space", "semi;colon"]:
+            with self.subTest(name=bad):
+                with self.assertRaises(ValueError):
+                    self.core.save_named_script(bad, "STRING x")
+
+    def test_traversal_attempt_does_not_touch_the_target(self):
+        victim = os.path.join(self.tmp, "boot.py")
+        with open(victim, "w") as f:
+            f.write("original")
+
+        with self.assertRaises(ValueError):
+            self.core.save_named_script("../boot.py", "overwritten")
+
+        with open(victim) as f:
+            self.assertEqual(f.read(), "original")
+
+    def test_accepts_ordinary_names(self):
+        for good in ["payload", "payload-1", "payload_1", "p.txt", "A1"]:
+            with self.subTest(name=good):
+                self.core.save_named_script(good, "STRING x")
+
+
+class TestClassifyLine(CoreTestCase):
+    def kind(self, line):
+        return self.core.classify_line(line)[0]
+
+    def warning(self, line):
+        return self.core.classify_line(line)[2]
+
+    def test_blank_and_comments(self):
+        self.assertEqual(self.kind(""), "blank")
+        self.assertEqual(self.kind("   "), "blank")
+        self.assertEqual(self.kind("# note"), "comment")
+        self.assertEqual(self.kind("REM note"), "comment")
+
+    def test_string_and_delay(self):
+        self.assertEqual(self.kind("STRING hello"), "string")
+        self.assertEqual(self.kind("DELAY 500"), "delay")
+        self.assertEqual(self.kind("CHAR_DELAY 20"), "char_delay")
+        self.assertIsNone(self.warning("DELAY 500"))
+
+    def test_flags_delay_without_a_number(self):
+        self.assertIsNotNone(self.warning("DELAY soon"))
+        self.assertIsNotNone(self.warning("DELAY"))
+        self.assertIsNotNone(self.warning("STRING"))
+
+    def test_plus_combination_is_understood(self):
+        kind, detail, warning = self.core.classify_line("CTRL+ALT+DELETE")
+        self.assertEqual(kind, "combo")
+        self.assertIsNone(warning)
+        self.assertIn("CTRL", detail)
+
+    def test_flags_unknown_key_inside_a_combination(self):
+        self.assertIn("NOPE", self.warning("CTRL+NOPE"))
+
+    def test_flags_the_space_separated_trap(self):
+        """The executor matches a bare key name before it checks for '+',
+        so only the first key of a space-separated line is ever sent. The
+        validator has to say so, and suggest the form that works."""
+        warning = self.warning("CTRL ALT DELETE")
+        self.assertIsNotNone(warning)
+        self.assertIn("only CTRL is sent", warning)
+        self.assertIn("CTRL+ALT+DELETE", warning)
+
+    def test_flags_a_modifier_with_a_trailing_argument(self):
+        self.assertIn("GUI+R", self.warning("GUI R"))
+
+    def test_flags_an_unrecognised_command(self):
+        kind, _detail, warning = self.core.classify_line("MOSUE_MOVE 10 10")
+        self.assertEqual(kind, "unknown")
+        self.assertIn("MOSUE_MOVE", warning)
+
+    def test_extra_commands_are_accepted_when_declared(self):
+        kind, _detail, warning = self.core.classify_line(
+            "MOUSE_MOVE 10 10", extra_commands=("MOUSE_MOVE",)
+        )
+        self.assertEqual(kind, "extra")
+        self.assertIsNone(warning)
+
+
+class TestValidateAndExplain(CoreTestCase):
+    SCRIPT = (
+        "# open a terminal\n"
+        "GUI R\n"
+        "DELAY 500\n"
+        "STRING hello\n"
+        "CTRL+ALT+DELETE\n"
+        "BOGUS_THING\n"
+    )
+
+    def test_validate_finds_only_the_real_problems(self):
+        problems = self.core.validate_script(self.SCRIPT)
+        self.assertEqual([number for number, _text, _message in problems], [2, 6])
+
+    def test_validate_passes_a_clean_script(self):
+        self.assertEqual(self.core.validate_script("STRING hi\nDELAY 10\nENTER\n"), [])
+
+    def test_dry_run_skips_blanks_and_keeps_line_numbers(self):
+        steps = self.core.explain_script(self.SCRIPT)
+        self.assertEqual([step["line"] for step in steps], [1, 2, 3, 4, 5, 6])
+        self.assertEqual(steps[3]["kind"], "string")
+        self.assertIn("hello", steps[3]["detail"])
+
+    def test_dry_run_sends_nothing(self):
+        self.core.explain_script(self.SCRIPT)
+        self.core.validate_script(self.SCRIPT)
+        self.assertEqual(
+            self.keyboard.events, [],
+            "a dry run must not touch the keyboard",
+        )
+
+
+class TestKeyCombinations(CoreTestCase):
+    def test_plus_separated_presses_and_releases_in_reverse(self):
+        self.assertTrue(self.core.execute_key_combination("CTRL+ALT+DELETE"))
+        self.assertEqual(
+            self.keyboard.events,
+            [("press", 1), ("press", 3), ("press", 6),
+             ("release", 6), ("release", 3), ("release", 1)],
+        )
+
+    def test_unknown_keys_send_nothing(self):
+        self.assertFalse(self.core.execute_key_combination("NOPE+ZZZ"))
+        self.assertEqual(self.keyboard.events, [])
+
+    def test_empty_input_sends_nothing(self):
+        self.assertFalse(self.core.execute_key_combination(""))
+        self.assertEqual(self.keyboard.events, [])
+
+
+class TestStatusSnapshot(CoreTestCase):
+    def test_reports_the_link_and_free_memory(self):
+        snapshot = self.core.status_snapshot()
+        self.assertTrue(snapshot["connected"])
+        self.assertEqual(snapshot["ip"], "192.168.1.50")
+        self.assertEqual(snapshot["free_memory"], 180000)
+        self.assertIn("uptime_s", snapshot)
+
+    def test_hides_the_address_when_offline(self):
+        self.env.radio.connected = False
+        self.assertEqual(self.core.status_snapshot()["ip"], "Not connected")
+
+
+class TestPageResponse(CoreTestCase):
+    def setUp(self):
+        super().setUp()
+        self.www = os.path.join(self.tmp, "www")
+        os.mkdir(self.www)
+
+    def test_streams_the_plain_file_when_there_is_no_gzip(self):
+        with open(os.path.join(self.www, "index.html"), "w") as f:
+            f.write("<html></html>")
+
+        response = self.core.page_response(None, root=self.www)
+        self.assertIsInstance(response, stubs.FakeFileResponse)
+        self.assertEqual(response.filename, "index.html")
+
+    def test_prefers_the_gzip_and_marks_the_encoding(self):
+        with open(os.path.join(self.www, "index.html.gz"), "wb") as f:
+            f.write(b"\x1f\x8bcompressed")
+
+        response = self.core.page_response(None, root=self.www)
+        self.assertIsInstance(response, stubs.FakeResponse)
+        self.assertEqual(response.headers["Content-Encoding"], "gzip")
+        self.assertEqual(response.content_type, "text/html")
+
+
+class TestReconnectPolicy(CoreTestCase):
+    def test_connected_link_needs_no_work(self):
+        self.env.radio.connected = True
+        self.assertTrue(self.core.check_wifi_connection())
+        self.assertEqual(self.env.radio.attempts, 0)
+
+    def test_reconnect_is_bounded_so_serving_is_not_blocked(self):
+        self.env.radio.connected = False
+        self.env.radio.connect_succeeds = False
+
+        self.assertFalse(self.core.check_wifi_connection(max_attempts=3))
+        self.assertEqual(self.env.radio.attempts, 3)
+
+    def test_successful_reconnect_reports_online(self):
+        self.env.radio.connected = False
+        self.assertTrue(self.core.check_wifi_connection())
+
+
+class FakeServer:
+    """A server that holds a port, so a leaked socket is visible."""
+
+    port_holder = None
+
+    def __init__(self, name):
+        self.name = name
+
+    def start(self, port=80):
+        if FakeServer.port_holder is not None:
+            raise OSError(112, f"address in use, held by {FakeServer.port_holder}")
+        FakeServer.port_holder = self.name
+
+    def stop(self):
+        if FakeServer.port_holder == self.name:
+            FakeServer.port_holder = None
+
+    def poll(self):
+        pass
+
+
+class TestRestartServer(CoreTestCase):
+    def setUp(self):
+        super().setUp()
+        FakeServer.port_holder = None
+        self.created = []
+
+    def setup_server(self):
+        server = FakeServer(f"srv{len(self.created) + 1}")
+        self.created.append(server)
+        try:
+            server.start(port=80)
+            return server
+        except OSError:
+            return None
+
+    def test_rebinding_without_stopping_first_fails(self):
+        """The behaviour being fixed: the old code called setup_server()
+        again while the previous socket still held port 80, so the restart
+        returned None and the caller rebooted the board."""
+        self.setup_server()
+        self.assertIsNone(self.setup_server())
+
+    def test_restart_frees_the_port_and_succeeds(self):
+        old = self.setup_server()
+        new = self.core.restart_server(old, self.setup_server)
+        self.assertIsNotNone(new)
+        self.assertEqual(FakeServer.port_holder, new.name)
+
+    def test_restart_survives_a_stop_that_raises(self):
+        class LegacyServer(FakeServer):
+            def stop(self):
+                raise RuntimeError("stop() not available in this version")
+
+        FakeServer.port_holder = None
+        self.assertIsNotNone(self.core.restart_server(LegacyServer("old"), self.setup_server))
+
+
+class TestServeForever(CoreTestCase):
+    """The scheduled check must rebuild the socket after a reconnect, and
+    only then. The original condition was inverted."""
+
+    def run_loop(self, offline_at_check, reconnect_succeeds):
+        clock = stubs.instant_clock(self.core)
+        restarts = []
+
+        class Server:
+            def __init__(self, polls_before_exit=3):
+                self.polls = 0
+                self.limit = polls_before_exit
+
+            def poll(self):
+                self.polls += 1
+                clock["t"] += 40  # two polls clear the 60 s check interval
+                if self.polls > self.limit:
+                    raise SystemExit
+
+            def stop(self):
+                pass
+
+        def setup_server():
+            restarts.append(True)
+            return Server()
+
+        self.env.radio.connected = not offline_at_check
+        self.env.radio.connect_succeeds = reconnect_succeeds
+
+        try:
+            self.core.serve_forever(Server(), setup_server)
+        except SystemExit:
+            pass
+
+        return len(restarts)
+
+    def test_no_restart_while_the_link_is_up(self):
+        self.assertEqual(self.run_loop(offline_at_check=False, reconnect_succeeds=True), 0)
+
+    def test_restarts_after_a_successful_reconnect(self):
+        self.assertGreaterEqual(
+            self.run_loop(offline_at_check=True, reconnect_succeeds=True), 1
+        )
+
+    def test_no_restart_when_the_reconnect_failed(self):
+        self.assertEqual(
+            self.run_loop(offline_at_check=True, reconnect_succeeds=False), 0,
+            "restarting the server with no network was the inverted condition",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

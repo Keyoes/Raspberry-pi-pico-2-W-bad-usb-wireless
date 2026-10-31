@@ -9,7 +9,10 @@ A powerful BadUSB controller for Raspberry Pi Pico 2 W with a web interface for 
 - **Persistent connection** - The device will automatically reconnect to WiFi if the connection is lost
 - **Fully responsive design** for both mobile and desktop devices
 - **Enhanced keyboard simulation** with improved timing control
-- **Command history** and payload logging
+- **Command history** in the browser for the current session (it is held in
+  the page, not on the device, so a reload clears it)
+- **Script library** on the device, with save, load and delete
+- **Validation and dry run** that inspect a script without sending keystrokes
 - **Kali Linux-inspired terminal UI** with modern cybersecurity aesthetics
 - **RESTful API** for programmatic control
 - **Keyboard support** for EN (US) layout
@@ -67,7 +70,15 @@ If your Raspberry Pi Pico 2 W already has MicroPython or other firmware installe
 
 1. Create `boot.py` in the root of your CIRCUITPY drive and copy the code from the provided boot.py file
 2. Create `code.py` in the root of your CIRCUITPY drive and copy the code from the provided code.py file
-3. Edit the WiFi credentials in `code.py`:
+3. Create a `www` directory in the root of your CIRCUITPY drive and copy
+   `www/index.html` into it. The web page is served from there rather than
+   being embedded in `code.py`, so it does not have to sit in RAM on every
+   request.
+
+   Optionally, run `python3 tools/build_www.py` first and copy the generated
+   `www/index.html.gz` as well. It is about 80% smaller and the firmware
+   prefers it; without it the plain file is streamed instead.
+4. Edit the WiFi credentials in `code.py`:
    ```python
    WIFI_SSID = "YourWiFiName"
    WIFI_PASSWORD = "YourWiFiPassword"
@@ -146,6 +157,65 @@ DELAY 1000
 STRING echo Hello, this is a BadUSB example!
 ENTER
 ```
+
+### Checking a script before running it
+
+Two endpoints inspect a script without sending a single keystroke. Both take
+the script as the request body.
+
+`POST /validate` reports what is wrong with it:
+
+```json
+{
+  "ok": false,
+  "problems": [
+    {"line": 2, "text": "CTRL ALT DELETE",
+     "message": "only CTRL is sent; the rest of the line is dropped. Write CTRL+ALT+DELETE to send them together."}
+  ]
+}
+```
+
+That particular warning is worth knowing about: a space-separated key
+sequence only ever sends its first key, because a bare key name is matched
+before the `+` form is considered. The validator also catches unknown
+commands, which otherwise fail silently, and `DELAY` values that are not
+numbers.
+
+`POST /dry-run` describes what the script would do, line by line. With an
+empty body it describes the script currently stored on the device, so you
+can check what is loaded before firing it:
+
+```json
+{"steps": [{"line": 1, "kind": "string", "detail": "type 'hello'", "warning": null}]}
+```
+
+### Script library
+
+The device keeps one active script, which is what `/execute` runs, plus a
+library of saved ones.
+
+```
+GET  /scripts                      -> {"scripts": ["recon", "setup-demo"]}
+POST /scripts  {"action": "save",   "name": "recon", "script": "..."}
+POST /scripts  {"action": "load",   "name": "recon"}   # makes it the active script
+POST /scripts  {"action": "delete", "name": "recon"}
+```
+
+Names may contain letters, digits, dash, underscore and dot, up to 48
+characters. Anything else is refused rather than quietly rewritten, so a
+name like `../boot.py` cannot reach outside the script directory.
+
+### Device status
+
+`GET /wifi-status` reports the link, the uptime and the free memory:
+
+```json
+{"connected": true, "ip": "192.168.1.100", "uptime_s": 1423.8, "free_memory": 164512}
+```
+
+`free_memory` is worth watching on this board. It has 520 KB of RAM shared
+between the WiFi stack, the HTTP server and everything else, and it is the
+number that explains most odd behaviour.
 
 ### API Access
 
@@ -295,38 +365,68 @@ KEY_MAPPING = {
 }
 ```
 
-### WiFi Reconnection Logic
-The device implements a robust WiFi connection system with automatic retries:
+### Project layout
 
-```python
-def connect_to_wifi():
-    max_attempts, retry_delay, attempt = 10, 5, 0
-    
-    while True:
-        attempt += 1
-        # ... connection logic
-        
-        if attempt % max_attempts == 0:
-            # Reset the device after multiple failed attempts
-            try:
-                microcontroller.reset()
-            except:
-                pass
+```
+code.py                      keyboard build: routes and the script interpreter
+Mouse_control_test/code.py   same, plus mouse commands
+lib/badusb_core.py           shared: LED, WiFi, storage, validation, serving loop
+www/index.html               the web page, served from the device's /www
+tools/build_www.py           pre-compresses the page to .html.gz
+tests/                       runs on a desktop, no board required
 ```
 
-### Script Storage
-Scripts can be stored either in the device's filesystem or in memory if file operations fail:
+The two builds were near-identical copies, so a fix had to be made twice and
+in practice was not. Everything that does not depend on which routes or which
+page a build serves now lives in `lib/badusb_core.py`. What stays per build is
+the page, the routes, the script interpreter and `KEY_MAPPING` — the mouse
+build supports a larger key table, and which keys a build accepts is part of
+what that build is.
+
+### WiFi reconnection
+
+`connect_to_wifi()` retries indefinitely at boot, since there is nothing else
+for the board to do until it is online, and resets after ten consecutive
+failures. The serving loop instead calls `check_wifi_connection()`, which is
+bounded: an unbounded retry there would stop the device answering HTTP for as
+long as the network was down.
+
+After a successful reconnect the listening socket is rebuilt, because the IP
+may have changed. The restart stops the old server first — otherwise the new
+one cannot bind port 80 and the board reboots instead of recovering.
+
+### Script storage
+
+The active script is written to the filesystem. If that write fails, usually
+because the host has the drive mounted and CircuitPython cannot write to it,
+it is kept in RAM instead and the response says so rather than reporting
+success:
 
 ```python
-def save_script(script_content):
-    try:
-        # ... file operations
-    except Exception as e:
-        print(f"Error saving script: {e}")
-        global script_in_memory
-        script_in_memory = script_content
-        return True
+detail = badusb_core.save_script(content)
+# -> "saved to flash"  or  "kept in RAM only, will be lost on reset"
 ```
+
+Saved scripts live in `/scripts` on the device. Names are validated, not
+sanitised: an unacceptable name is refused outright so it cannot become a
+write somewhere else on the filesystem.
+
+### Running the tests
+
+The logic in `lib/badusb_core.py` can be exercised on a desktop, with
+CircuitPython's hardware modules stubbed out:
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+Among other things this covers where a script actually got stored, what the
+validator makes of each kind of line, that a dry run sends nothing, that a
+script name cannot escape its directory, and that the serving loop rebuilds
+its socket after a reconnect and not when the reconnect failed.
+
+A green run means the logic holds. It says nothing about USB HID, the radio
+or the HTTP server, which are stubbed — those still need a real board.
 
 ## Ethics Statement
 

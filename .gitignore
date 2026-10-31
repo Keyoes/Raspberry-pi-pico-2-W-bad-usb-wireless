@@ -15,6 +15,11 @@ settings.toml
 
 # Runtime state written by the device
 badusb_script.txt
+scripts/
+
+# Build output of tools/build_www.py; regenerate rather than commit, so a
+# stale copy can never disagree with the HTML it came from.
+*.html.gz
 
 # IDEs
 .vscode/

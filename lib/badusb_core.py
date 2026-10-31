@@ -16,6 +16,7 @@ Nothing in here changes the behaviour of the code it replaced; the functions
 were moved across unchanged, timings included.
 """
 
+import gc
 import os
 import time
 
@@ -24,7 +25,11 @@ import digitalio
 import microcontroller
 import wifi
 
+import adafruit_httpserver.response as _response
+
 DEFAULT_SCRIPT_PATH = "/badusb_script.txt"
+DEFAULT_SCRIPT_DIR = "/scripts"
+DEFAULT_WWW_ROOT = "/www"
 
 # Populated by configure(). Kept as module state rather than passed through
 # every call because a build is a single instance: one keyboard, one link.
@@ -34,6 +39,7 @@ _keyboard = None
 _keyboard_layout = None
 _key_mapping = {}
 _script_path = DEFAULT_SCRIPT_PATH
+_script_dir = DEFAULT_SCRIPT_DIR
 
 _script_in_memory = None
 
@@ -73,14 +79,15 @@ def blink(times, on=0.2, off=0.2):
 
 
 def configure(ssid, password, keyboard, keyboard_layout, key_mapping,
-              script_path=DEFAULT_SCRIPT_PATH):
+              script_path=DEFAULT_SCRIPT_PATH, script_dir=DEFAULT_SCRIPT_DIR):
     """Register the build's hardware and settings.
 
     ``key_mapping`` stays per-build on purpose: the two builds support
     different key tables, and which keys a build accepts is part of what
     that build is, not something this module should decide.
     """
-    global _ssid, _password, _keyboard, _keyboard_layout, _key_mapping, _script_path
+    global _ssid, _password, _keyboard, _keyboard_layout, _key_mapping
+    global _script_path, _script_dir
 
     _ssid = ssid
     _password = password
@@ -88,6 +95,7 @@ def configure(ssid, password, keyboard, keyboard_layout, key_mapping,
     _keyboard_layout = keyboard_layout
     _key_mapping = key_mapping
     _script_path = script_path
+    _script_dir = script_dir
 
 
 def connect_to_wifi(max_attempts=0, retry_delay=5, reset_on_failure=True):
@@ -179,6 +187,81 @@ def save_script(script_content):
         return "kept in RAM only, will be lost on reset"
 
 
+def _safe_name(name):
+    """Validate a script name, or raise ValueError.
+
+    Names become filenames, so anything that could climb out of the script
+    directory or overwrite firmware is refused outright rather than
+    sanitised quietly: "../boot.py" must not turn into a silent write to
+    boot.py. Allowed: letters, digits, dash, underscore and dot, with no
+    leading dot and no "..".
+    """
+    if not name or len(name) > 48:
+        raise ValueError("script name must be 1 to 48 characters")
+
+    if name.startswith(".") or ".." in name:
+        raise ValueError("script name may not start with a dot or contain '..'")
+
+    for char in name:
+        if not (char.isalpha() or char.isdigit() or char in "-_."):
+            raise ValueError(
+                f"script name may not contain {char!r}; "
+                "use letters, digits, dash, underscore or dot"
+            )
+
+    return name
+
+
+def _script_file(name):
+    return f"{_script_dir}/{_safe_name(name)}"
+
+
+def list_scripts():
+    """Names of the saved scripts, sorted. Empty when there are none."""
+    try:
+        return sorted(os.listdir(_script_dir))
+    except OSError:
+        return []
+
+
+def save_named_script(name, content):
+    """Save a script into the library under ``name``.
+
+    Raises ValueError for an unacceptable name and OSError when the
+    filesystem will not take the write (the drive is mounted read-only by
+    the host, typically).
+    """
+    path = _script_file(name)
+
+    try:
+        os.mkdir(_script_dir)
+    except OSError:
+        pass  # already there, or the filesystem is read-only; the write tells us
+
+    with open(path, "w") as f:
+        f.write(content)
+
+    return name
+
+
+def load_named_script(name):
+    """Return a saved script's text, or None when there is no such script."""
+    try:
+        with open(_script_file(name), "r") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def delete_named_script(name):
+    """Delete a saved script. Returns True when something was removed."""
+    try:
+        os.remove(_script_file(name))
+        return True
+    except OSError:
+        return False
+
+
 def load_script_lines():
     """Return the stored script's lines, or None when there is no script."""
     try:
@@ -199,6 +282,173 @@ def read_script():
         return None
 
     return "".join(line if line.endswith("\n") else line + "\n" for line in lines)
+
+
+BASE_COMMANDS = ("STRING", "DELAY", "CHAR_DELAY", "REM")
+
+
+def classify_line(line, extra_commands=()):
+    """Work out what one script line would do, without doing it.
+
+    IMPORTANT: this mirrors the dispatch order in each build's
+    execute_script(), and has to be kept in step with it. A dry run that
+    disagrees with the executor is worse than no dry run, so the order
+    below is deliberately the same, including the case where a bare key
+    name wins before the "+" check.
+
+    Returns (kind, detail, warning). ``warning`` is None when the line is
+    unambiguous. ``kind`` is one of: blank, comment, string, delay,
+    char_delay, key, combo, extra, unknown.
+    """
+    stripped = line.strip()
+
+    if not stripped or stripped.startswith("#"):
+        return "blank" if not stripped else "comment", stripped, None
+
+    parts = stripped.split(" ", 1)
+    command = parts[0].upper()
+    argument = parts[1] if len(parts) > 1 else ""
+
+    if command == "STRING":
+        if not argument:
+            return "string", "", "STRING with no text, nothing will be typed"
+        return "string", f"type {argument!r}", None
+
+    if command in ("DELAY", "CHAR_DELAY"):
+        kind = "delay" if command == "DELAY" else "char_delay"
+        if not argument:
+            return kind, "", f"{command} with no value, the line is ignored"
+        try:
+            value = float(argument)
+        except ValueError:
+            return kind, argument, f"{command} value {argument!r} is not a number, the line is ignored"
+        if value < 0:
+            return kind, argument, f"{command} value is negative"
+        if kind == "delay":
+            return kind, f"wait {value:.0f} ms", None
+        return kind, f"set per-character delay to {value:.0f} ms", None
+
+    if command == "REM" or command.startswith("//"):
+        return "comment", stripped, None
+
+    # Mirrors execute_script: a bare key name is matched here, BEFORE the
+    # "+" check below. That is why a space-separated sequence only ever
+    # sends its first key.
+    if command in _key_mapping:
+        if argument:
+            suggestion = "+".join(stripped.split())
+            return (
+                "key",
+                f"press {command}",
+                f"only {command} is sent; the rest of the line is dropped. "
+                f"Write {suggestion} to send them together.",
+            )
+        return "key", f"press {command}", None
+
+    if "+" in stripped:
+        names = [p.strip().upper() for p in stripped.split("+") if p.strip()]
+        unknown = [n for n in names if n not in _key_mapping]
+        if unknown:
+            return "combo", stripped, f"unknown key(s) in combination: {', '.join(unknown)}"
+        return "combo", "press " + " + ".join(names), None
+
+    if command in extra_commands:
+        return "extra", stripped, None
+
+    # execute_script's final else hands the line to execute_key_combination,
+    # which silently does nothing when it recognises no key names.
+    names = [p.strip().upper() for p in stripped.split() if p.strip()]
+    known = [n for n in names if n in _key_mapping]
+    if not known:
+        return "unknown", stripped, f"unrecognised command {command!r}, the line does nothing"
+
+    return "combo", "press " + " + ".join(known), "space-separated keys; prefer + between them"
+
+
+def validate_script(text, extra_commands=()):
+    """Return the problems in a script, without sending anything.
+
+    Each entry is (line_number, line, message). An empty list means every
+    line was understood -- not that the script does what you intended.
+    """
+    problems = []
+
+    for number, line in enumerate(text.splitlines(), start=1):
+        _kind, _detail, warning = classify_line(line, extra_commands)
+        if warning:
+            problems.append((number, line.strip(), warning))
+
+    return problems
+
+
+def explain_script(text, extra_commands=()):
+    """Describe what a script would do, line by line, sending nothing.
+
+    This is the dry run: it drives the same classifier the validator uses,
+    so what it reports is what the executor would dispatch.
+    """
+    steps = []
+
+    for number, line in enumerate(text.splitlines(), start=1):
+        kind, detail, warning = classify_line(line, extra_commands)
+        if kind == "blank":
+            continue
+        steps.append({
+            "line": number,
+            "kind": kind,
+            "detail": detail,
+            "warning": warning,
+        })
+
+    return steps
+
+
+def page_response(request, filename="index.html", root=DEFAULT_WWW_ROOT):
+    """Serve a page from the web-asset directory.
+
+    The page used to be a 27 KB string literal inside the route, so the
+    whole document sat in RAM on a board with 520 KB of it, next to the
+    WiFi stack and the HTTP server. Now it comes off the filesystem.
+
+    A gzipped copy is preferred when present: it is roughly five times
+    smaller for a page that is mostly inline CSS and JavaScript. The
+    library has no Content-Encoding support, so that case is built by
+    hand. Without the .gz the plain file is streamed in chunks, which is
+    the RAM win on its own, so nothing breaks if it was never generated.
+    Run tools/build_www.py to produce it.
+    """
+    gz_name = filename + ".gz"
+
+    try:
+        with open(f"{root}/{gz_name}", "rb") as f:
+            body = f.read()
+    except OSError:
+        return _response.FileResponse(request, filename, root_path=root)
+
+    return _response.Response(
+        request,
+        body,
+        content_type="text/html",
+        headers={"Content-Encoding": "gzip"},
+    )
+
+
+def status_snapshot():
+    """Connection and health figures for the status endpoint.
+
+    free_memory matters on this board: the page used to be held in RAM per
+    request, and when things misbehave this is the number that says why.
+    """
+    is_connected = wifi.radio.connected
+
+    return {
+        "connected": is_connected,
+        "ip": str(wifi.radio.ipv4_address) if is_connected else "Not connected",
+        # monotonic, not time(): the board has no RTC, so time.time() was
+        # never a wall clock here. This is seconds since boot.
+        "uptime_s": time.monotonic(),
+        "free_memory": gc.mem_free(),
+    }
 
 
 def parse_key_combo(key_combo):
