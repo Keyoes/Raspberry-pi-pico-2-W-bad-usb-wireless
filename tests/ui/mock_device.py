@@ -122,10 +122,9 @@ class H(BaseHTTPRequestHandler):
             return self._send(400, {"error": "unknown action"})
         if self.path == "/verify":
             ok, detail = core.verify_host_link(timeout=0.05)
-            return self._send(200 if ok else 503, {
-                "ok": ok, "detail": detail,
-                "usb_connected": core.usb_host_connected(),
-            })
+            payload = {"ok": ok, "usb_connected": core.usb_host_connected()}
+            payload.update(detail)
+            return self._send(200 if ok else 503, payload)
         if self.path == "/upload":
             return self._send(200, "Script uploaded: " + core.save_script(body), "text/plain")
         if self.path == "/execute":

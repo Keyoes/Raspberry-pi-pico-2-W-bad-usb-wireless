@@ -432,11 +432,9 @@ def setup_server():
         tell a working cable from a payload typing into nothing.
         """
         ok, detail = badusb_core.verify_host_link()
-        return _json(request, {
-            "ok": ok,
-            "detail": detail,
-            "usb_connected": badusb_core.usb_host_connected(),
-        }, status=200 if ok else 503)
+        payload = {"ok": ok, "usb_connected": badusb_core.usb_host_connected()}
+        payload.update(detail)
+        return _json(request, payload, status=200 if ok else 503)
 
     @server.route("/execute", httpmethods.POST)
     def execute_badusb(request):

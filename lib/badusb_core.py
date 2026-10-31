@@ -571,6 +571,19 @@ def usb_host_connected():
         return None
 
 
+def _suggested_char_delay(round_trip):
+    """A CHAR_DELAY to start from, in milliseconds, given how slowly the
+    host answered.
+
+    A rule of thumb, not a measurement: a machine that takes longer to
+    turn a key around is a machine that will drop characters sooner, so
+    pace to it. Floored at the key hold, since nothing below that is
+    achievable anyway.
+    """
+    suggested = max(KEY_HOLD_SECONDS, round_trip)
+    return int(round(suggested * 1000))
+
+
 def verify_host_link(timeout=0.5, poll=0.01):
     """Prove the host is receiving keystrokes, by making it answer one.
 
@@ -589,37 +602,49 @@ def verify_host_link(timeout=0.5, poll=0.01):
     which is not the same as False.
     """
     if _keyboard is None:
-        return None, "no keyboard configured"
+        return None, {"message": "no keyboard configured"}
 
     connected = usb_host_connected()
     if connected is False:
-        return False, "no USB host attached"
+        return False, {"message": "no USB host attached"}
 
     try:
         before = _keyboard.led_status
     except (AttributeError, OSError) as e:
-        return None, f"this build does not report LED state ({e})"
+        return None, {"message": f"this build does not report LED state ({e})"}
 
     try:
         # Keycode 0x53 is Num Lock; pressed through the same path as any
         # other key so the check exercises what a payload would.
+        sent_at = time.monotonic()
         _keyboard.press(0x53)
         _keyboard.release_all()
 
-        deadline = time.monotonic() + timeout
+        deadline = sent_at + timeout
         while time.monotonic() < deadline:
             if _keyboard.led_status != before:
+                round_trip = time.monotonic() - sent_at
                 _keyboard.press(0x53)       # put the target back as we found it
                 _keyboard.release_all()
-                return True, "host acknowledged a keystroke"
+                return True, {
+                    "message": "host acknowledged a keystroke",
+                    # How long the host took to process a key and report
+                    # back. It does not reveal the host's keyboard layout --
+                    # that is a mapping applied after the scancode arrives,
+                    # identical in timing whichever layout is set. It does
+                    # say how quickly this particular machine turns HID
+                    # around, which is what to size CHAR_DELAY against.
+                    "round_trip_s": round(round_trip, 4),
+                    "suggested_char_delay_ms": _suggested_char_delay(round_trip),
+                }
             time.sleep(poll)
 
-        return False, (
-            f"no response from the host within {timeout:.1f}s; "
-            "keystrokes are probably not arriving"
-        )
+        return False, {
+            "message": f"no response from the host within {timeout:.1f}s; "
+                       "keystrokes are probably not arriving",
+        }
     except Exception as e:
-        return None, f"could not run the check ({e})"
+        return None, {"message": f"could not run the check ({e})"}
 
 
 def type_text(text, char_delay, hold=KEY_HOLD_SECONDS):

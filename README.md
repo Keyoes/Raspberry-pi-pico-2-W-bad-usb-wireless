@@ -423,10 +423,22 @@ is a pre-flight check, not something to run per keystroke: it costs a
 round trip and it blinks a light on the user's keyboard.
 
 ```json
-{"ok": true,  "detail": "host acknowledged a keystroke"}
-{"ok": false, "detail": "no response from the host within 0.5s; keystrokes are probably not arriving"}
-{"ok": null,  "detail": "this build does not report LED state (...)"}
+{"ok": true,  "message": "host acknowledged a keystroke",
+ "round_trip_s": 0.012, "suggested_char_delay_ms": 12}
+{"ok": false, "message": "no response from the host within 0.5s; keystrokes are probably not arriving"}
+{"ok": null,  "message": "this build does not report LED state (...)"}
 ```
+
+`round_trip_s` is how long that machine took to process a key and report
+back, and `suggested_char_delay_ms` is a starting point derived from it:
+a host that answers slowly is a host that drops characters sooner, so
+pace to it instead of guessing. It is a rule of thumb, floored at the key
+hold since nothing below that is achievable.
+
+It does **not** reveal the host's keyboard layout, and no timing can. The
+device sends scancodes; the layout is the mapping the host applies after
+they arrive, and it is identical in timing whichever layout is set. Two
+machines, one US and one Romanian, are indistinguishable from here.
 
 `ok: null` means the answer is not knowable, which is not the same as a
 failure, and the UI says so differently.

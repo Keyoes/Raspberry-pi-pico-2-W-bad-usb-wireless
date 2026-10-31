@@ -791,6 +791,26 @@ class TestHostVerification(CoreTestCase):
         ok, detail = self.core.verify_host_link()
         self.assertTrue(ok, detail)
 
+    def test_it_reports_how_long_the_host_took(self):
+        self.configure_with(stubs.FakeHostKeyboard(answers=True))
+        _ok, detail = self.core.verify_host_link()
+        self.assertIn("round_trip_s", detail)
+        self.assertGreaterEqual(detail["round_trip_s"], 0)
+
+    def test_the_suggested_delay_never_drops_below_the_key_hold(self):
+        """Nothing under the hold is achievable, so suggesting it would be
+        advice that cannot be followed."""
+        self.configure_with(stubs.FakeHostKeyboard(answers=True))
+        _ok, detail = self.core.verify_host_link()
+        floor_ms = int(round(self.core.KEY_HOLD_SECONDS * 1000))
+        self.assertGreaterEqual(detail["suggested_char_delay_ms"], floor_ms)
+
+    def test_a_slow_host_is_told_to_type_slower(self):
+        self.assertGreater(
+            self.core._suggested_char_delay(0.040),
+            self.core._suggested_char_delay(0.002),
+        )
+
     def test_the_target_is_left_as_it_was_found(self):
         keyboard = self.configure_with(stubs.FakeHostKeyboard(answers=True))
         before = keyboard.led_status
@@ -802,7 +822,7 @@ class TestHostVerification(CoreTestCase):
         self.configure_with(stubs.FakeHostKeyboard(answers=False))
         ok, detail = self.core.verify_host_link(timeout=0.05)
         self.assertFalse(ok)
-        self.assertIn("no response", detail)
+        self.assertIn("no response", detail["message"])
 
     def test_a_keyboard_without_led_state_is_unknown_not_broken(self):
         """A build that cannot report LED state must not be called a
@@ -810,7 +830,7 @@ class TestHostVerification(CoreTestCase):
         self.configure_with(stubs.FakeKeyboard())
         ok, detail = self.core.verify_host_link()
         self.assertIsNone(ok)
-        self.assertIn("LED state", detail)
+        self.assertIn("LED state", detail["message"])
 
     def test_the_check_uses_the_ordinary_key_path(self):
         keyboard = self.configure_with(stubs.FakeHostKeyboard(answers=True))

@@ -845,19 +845,27 @@
             .then(response => response.json())
             .then(data => {
                 if (data.ok === true) {
-                    showReport(['<span class="report-ok">Host is receiving '
-                                + 'keystrokes.</span>']);
-                    addToHistory("VERIFY", "success");
+                    const ms = Math.round(data.round_trip_s * 1000);
+                    showReport([
+                        '<span class="report-ok">Host is receiving keystrokes.</span>',
+                        `<span class="report-line">  answered in ${ms} ms</span>`,
+                        '<span class="report-line">  suggested CHAR_DELAY: '
+                        + `${data.suggested_char_delay_ms} ms</span>`,
+                        '<span class="report-line">  (a host that answers slowly '
+                        + 'drops characters sooner; this is a starting point, '
+                        + 'not a measurement of your script)</span>',
+                    ]);
+                    addToHistory("VERIFY", `ok, ${ms} ms`);
                     return;
                 }
                 if (data.ok === null) {
                     showReport(['<span class="report-problem">Could not tell: '
-                                + escapeHtml(data.detail) + '</span>']);
+                                + escapeHtml(data.message) + '</span>']);
                     addToHistory("VERIFY", "unknown");
                     return;
                 }
                 showReport(['<span class="report-problem">Host is not '
-                            + 'receiving: ' + escapeHtml(data.detail)
+                            + 'receiving: ' + escapeHtml(data.message)
                             + '</span>']);
                 addToHistory("VERIFY", "failed");
             })
