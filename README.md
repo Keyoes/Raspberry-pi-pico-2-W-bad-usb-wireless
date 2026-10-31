@@ -539,6 +539,23 @@ The serving loop adapts its pause: tight while requests are arriving,
 backing off to the original 100 ms when idle, so it is better than the old
 fixed pause under load without waking more often at rest.
 
+Those figures were worked out from the code, not taken from a board. To
+check them on your own device once it is flashed:
+
+```bash
+python3 tools/benchmark.py http://192.168.1.100
+```
+
+It reports the page size and whether the gzip and the 304 are working,
+status-endpoint latency, free memory either side of a page load, how long
+script checking takes as scripts grow, and the largest body the device
+actually accepts — which is the quickest way to tell whether
+`request_buffer_size` or `MAX_BODY_BYTES` is your real limit. It needs
+only the standard library, and it does not touch keystroke sending.
+
+It also runs against `tests/ui/mock_device.py`, which is how the benchmark
+itself gets checked; that says nothing about the hardware.
+
 Two things measured and deliberately not done:
 
 - **Minifying the page before gzip.** It takes the raw file from 35.6 KB to
