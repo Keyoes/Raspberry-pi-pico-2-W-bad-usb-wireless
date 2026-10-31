@@ -103,7 +103,8 @@ class FakeFileResponse:
         self.status = status
 
 
-def install(with_led=True, free_memory=180000):
+def install(with_led=True, free_memory=180000, with_neopixel=False,
+            neopixel_power=False):
     """Install the stub modules and return handles to the useful ones.
 
     Call this before importing ``badusb_core``; it clears the module from
@@ -119,6 +120,10 @@ def install(with_led=True, free_memory=180000):
     board = types.ModuleType("board")
     if with_led:
         board.LED = "GP25"
+    if with_neopixel:
+        board.NEOPIXEL = "NEOPIXEL_PIN"
+        if neopixel_power:
+            board.NEOPIXEL_POWER = "NEOPIXEL_POWER_PIN"
 
     class DigitalInOut:
         def __init__(self, pin):
@@ -146,6 +151,29 @@ def install(with_led=True, free_memory=180000):
     gc_mod = types.ModuleType("gc")
     gc_mod.mem_free = lambda: free_memory
     gc_mod.collect = lambda: None
+
+    if with_neopixel:
+        neopixel_module = types.ModuleType("neopixel")
+
+        class NeoPixel:
+            """Records what was written, like the real one would show."""
+
+            def __init__(self, pin, count, brightness=1.0, auto_write=True):
+                self.pin = pin
+                self.pixels = [(0, 0, 0)] * count
+                self.brightness = brightness
+                self.shown = []
+
+            def __setitem__(self, index, colour):
+                self.pixels[index] = colour
+
+            def show(self):
+                self.shown.append(tuple(self.pixels))
+
+        neopixel_module.NeoPixel = NeoPixel
+        sys.modules["neopixel"] = neopixel_module
+    else:
+        sys.modules.pop("neopixel", None)
 
     hid = types.ModuleType("adafruit_hid")
     keycode = types.ModuleType("adafruit_hid.keycode")

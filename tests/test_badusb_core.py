@@ -51,17 +51,56 @@ class CoreTestCase(unittest.TestCase):
 
 
 class TestStatusLed(CoreTestCase):
-    def test_uses_board_led_when_present(self):
-        self.assertEqual(self.core.init_status_led().pin, "GP25")
+    """Boards disagree about what an indicator is: a plain LED on the Pico
+    and the Lolin S2 Mini, a NeoPixel on the QT Py and most Adafruit
+    ESP32-S2/S3 boards, nothing at all on some. None of those may stop the
+    board booting."""
 
-    def test_falls_back_to_a_stub_when_absent(self):
-        stubs.install(with_led=False)
+    def fresh(self, **kwargs):
+        stubs.install(**kwargs)
         import badusb_core
 
-        led = badusb_core.init_status_led()
+        return badusb_core
+
+    def test_plain_led_is_preferred_when_present(self):
+        self.assertEqual(self.core.init_status_led().pin, "GP25")
+
+    def test_neopixel_is_used_when_there_is_no_plain_led(self):
+        core = self.fresh(with_led=False, with_neopixel=True)
+        led = core.init_status_led()
+        self.assertEqual(type(led).__name__, "_NeoPixelStatusLed")
+
+    def test_the_neopixel_actually_lights_and_clears(self):
+        core = self.fresh(with_led=False, with_neopixel=True)
+        led = core.init_status_led()
+
+        led.value = True
+        self.assertNotEqual(led._pixel.shown[-1][0], (0, 0, 0))
+        led.value = False
+        self.assertEqual(led._pixel.shown[-1][0], (0, 0, 0))
+
+    def test_the_neopixel_power_pin_is_switched_on(self):
+        """Several of these boards leave the pixel unpowered by default,
+        so it stays dark unless this is handled."""
+        core = self.fresh(with_led=False, with_neopixel=True,
+                          neopixel_power=True)
+        self.assertEqual(type(core.init_status_led()).__name__,
+                         "_NeoPixelStatusLed")
+
+    def test_a_board_with_neither_still_boots(self):
+        core = self.fresh(with_led=False)
+        led = core.init_status_led()
         self.assertEqual(type(led).__name__, "_NoStatusLed")
         led.value = True  # must not raise
-        badusb_core.blink(2, on=0, off=0)
+        core.blink(2, on=0, off=0)
+
+    def test_value_reads_back_on_every_kind(self):
+        for kwargs in ({}, {"with_led": False, "with_neopixel": True},
+                       {"with_led": False}):
+            with self.subTest(board=kwargs):
+                led = self.fresh(**kwargs).init_status_led()
+                led.value = True
+                self.assertTrue(led.value)
 
 
 class TestScriptStorage(CoreTestCase):

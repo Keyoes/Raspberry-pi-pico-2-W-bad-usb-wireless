@@ -44,26 +44,91 @@ _script_dir = DEFAULT_SCRIPT_DIR
 _script_in_memory = None
 
 
-def init_status_led():
-    """Return the on-board status LED.
+class _NoStatusLed:
+    """Stand-in for a board with no indicator we can drive."""
 
-    Not every board exposes ``board.LED``. On most ESP32-S2/S3 boards the
-    on-board indicator is a NeoPixel (``board.NEOPIXEL``) or simply absent,
-    which used to raise AttributeError and kill the script before it ever
-    reached the WiFi setup. Fall back to a no-op stub so the firmware still
-    boots; the LED is only a status indicator.
+    value = False
+
+
+class _NeoPixelStatusLed:
+    """Drives a NeoPixel through the same ``.value`` a plain LED uses.
+
+    Boards like the QT Py ESP32-S2 have an RGB NeoPixel instead of a
+    simple LED, often behind its own power pin that has to be switched on
+    first or it stays dark. Wrapping it this way keeps every caller
+    writing ``led.value = True`` and none of them caring which it is.
+
+    Dim on purpose: a NeoPixel at full brightness is unpleasant to have
+    blinking at you on a desk.
     """
+
+    def __init__(self, pixel, colour=(0, 40, 0)):
+        self._pixel = pixel
+        self._colour = colour
+        self._value = False
+
+    @property
+    def value(self):
+        return self._value
+
+    @value.setter
+    def value(self, on):
+        self._value = bool(on)
+        try:
+            self._pixel[0] = self._colour if on else (0, 0, 0)
+            self._pixel.show()
+        except Exception:
+            pass          # an indicator is never worth taking the board down
+
+
+def _try_digital_led():
+    """board.LED, as on the Pico and the Lolin S2 Mini."""
+    pin = digitalio.DigitalInOut(board.LED)
+    pin.direction = digitalio.Direction.OUTPUT
+    return pin
+
+
+def _try_neopixel():
+    """board.NEOPIXEL, as on the QT Py and most Adafruit S2/S3 boards.
+
+    The power pin is switched on when the board has one; several of these
+    boards leave the NeoPixel unpowered by default to save current.
+    """
+    import neopixel
+
     try:
-        pin = digitalio.DigitalInOut(board.LED)
-        pin.direction = digitalio.Direction.OUTPUT
-        return pin
-    except (AttributeError, ValueError) as exc:
-        print(f"No usable status LED ({exc}); continuing without it.")
+        power = digitalio.DigitalInOut(board.NEOPIXEL_POWER)
+        power.direction = digitalio.Direction.OUTPUT
+        power.value = True
+    except AttributeError:
+        pass              # board has no separate power pin, which is fine
 
-        class _NoStatusLed:
-            value = False
+    return _NeoPixelStatusLed(neopixel.NeoPixel(board.NEOPIXEL, 1,
+                                                brightness=0.2,
+                                                auto_write=False))
 
-        return _NoStatusLed()
+
+def init_status_led():
+    """Return something with a ``.value`` that indicates status.
+
+    Boards disagree about what an indicator is: a plain LED on the Pico
+    and the Lolin S2 Mini, a NeoPixel on the QT Py and most Adafruit
+    ESP32-S2/S3 boards, nothing at all on some. Rather than hardcode a
+    pin name per board, try each in turn and use whatever is there.
+
+    Falling through to the stub is not a failure. The indicator is status
+    output; losing it must never stop the board booting, which is what the
+    original ``digitalio.DigitalInOut(board.LED)`` did everywhere that
+    attribute was missing.
+    """
+    for attempt in (_try_digital_led, _try_neopixel):
+        try:
+            return attempt()
+        except Exception:
+            continue
+
+    print("No usable status LED on this board; continuing without one.")
+    return _NoStatusLed()
 
 
 led = init_status_led()

@@ -67,10 +67,22 @@ It will **not** run on a plain ESP32 or an ESP32-C3. Those have no USB
 device peripheral, so they cannot present themselves as a keyboard at
 all. That is a hardware limit, not a porting problem.
 
-On a [Lolin S2 Mini](https://circuitpython.org/board/lolin_s2_mini/), for
-example: `board.LED` exists on GPIO15, and `usb_hid` and `wifi` are both
-in the board's CircuitPython build. Flash CircuitPython for that board,
-copy the same files, and it works.
+The status indicator is found rather than assumed. Boards disagree about
+what one is, so the firmware tries each in turn:
+
+1. `board.LED`, a plain LED — the Pico, and the
+   [Lolin S2 Mini](https://circuitpython.org/board/lolin_s2_mini/) on GPIO15
+2. `board.NEOPIXEL` — the
+   [QT Py ESP32-S2](https://learn.adafruit.com/adafruit-qt-py-esp32-s2) and
+   most Adafruit S2/S3 boards, switching on `board.NEOPIXEL_POWER` first
+   where the board has one, since several leave the pixel unpowered by
+   default and it would otherwise just stay dark
+3. nothing, in which case the board boots anyway without an indicator
+
+So on a QT Py ESP32-S2 you get the same blink codes on the NeoPixel,
+dimmed, with no configuration. It needs the `neopixel` library in `lib/`
+if the board's build does not freeze it in; without it the firmware falls
+through to no indicator rather than failing.
 
 Three things to watch, none of them code:
 
