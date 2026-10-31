@@ -555,6 +555,34 @@ def paced_keyboard(keyboard_class, devices, hold=KEY_HOLD_SECONDS):
     return PacedKeyboard(devices)
 
 
+def type_text(text, char_delay, hold=KEY_HOLD_SECONDS):
+    """Type text, taking the key hold out of the character delay.
+
+    What paces the target is the character rate -- how often a new key
+    arrives -- not where the time sits inside each character. So the hold
+    is subtracted from the gap that follows rather than added on top:
+
+        before   press, release at once, wait char_delay
+                 period char_delay, held 0 ms, the host can miss it
+        naive    press, hold, release, wait char_delay
+                 period char_delay + hold, held properly, but slower
+        here     press, hold, release, wait char_delay - hold
+                 period char_delay, held properly, same rate as before
+
+    When char_delay is shorter than the hold there is nothing left to
+    subtract, and the hold becomes the floor: roughly 4 ms per character,
+    because below that the host stops seeing the keys at all. Asking for
+    1 ms characters and getting 4 ms is the honest outcome; asking for
+    1 ms and getting nothing typed was the old one.
+    """
+    remaining = char_delay - hold
+
+    for char in text:
+        _keyboard_layout.write(char)
+        if remaining > 0:
+            time.sleep(remaining)
+
+
 def parse_key_combo(key_combo):
     keys = []
     if "+" in key_combo:

@@ -320,10 +320,10 @@ def execute_script():
                 
             elif command == "STRING":
                 if len(parts) > 1:
-                    text = parts[1]
-                    for char in text:
-                        keyboard_layout.write(char)
-                        time.sleep(char_delay)
+                    # The key hold comes out of char_delay rather than on
+                    # top of it, so the character rate the target sees is
+                    # unchanged. See badusb_core.type_text.
+                    badusb_core.type_text(parts[1], char_delay)
                     time.sleep(char_delay)
                     
             elif command == "DELAY":

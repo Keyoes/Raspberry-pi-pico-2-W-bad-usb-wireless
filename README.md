@@ -382,16 +382,37 @@ back. Neither could the `delay` argument to `write()`, which sleeps after
 `release_all()` for the same reason.
 
 The keyboard now holds each key for `KEY_HOLD_SECONDS` (4 ms, four poll
-frames) before releasing it, which is done by wrapping `release_all()` so
-the library keeps ownership of the keycode, shift and AltGr handling.
-`tests/test_badusb_core.py` simulates a host polling at 1 ms and checks
-both directions: without the hold the key is invisible, with it the host
-sees it across several frames and it is still released afterwards.
+frames) before releasing it, by wrapping `release_all()` so the library
+keeps ownership of the keycode, shift and AltGr handling.
+
+That hold costs nothing in throughput, because it comes **out of**
+`CHAR_DELAY` rather than on top of it. What paces the target is the
+character rate, not where the time sits inside each character:
+
+| | period per character | key held |
+|---|---|---|
+| before | `CHAR_DELAY` | 0 ms — the host can miss it |
+| hold added on top | `CHAR_DELAY` + 4 ms | 4 ms, but 40% slower |
+| what it does now | `CHAR_DELAY` | 4 ms, same rate as before |
+
+With `CHAR_DELAY` below 4 ms there is nothing left to subtract and the
+hold becomes the floor, so very short delays give roughly 4 ms per
+character. Getting 4 ms when you asked for 1 ms is the honest outcome;
+getting nothing typed was the old one.
+
+`tests/test_badusb_core.py` checks both halves: a simulated host polling
+at 1 ms misses the key without the hold and sees it across several frames
+with it, and typing five characters still takes five character delays.
 
 Set `KEY_HOLD_SECONDS = 0` in `lib/badusb_core.py` for the old behaviour.
 Raising `CHAR_DELAY` is still worth doing on a slow or loaded target — it
 paces the host's input handling, which is a different bottleneck from the
 polling one.
+
+There is no way to confirm a keystroke actually arrived. USB HID gives
+the device no acknowledgement; the only backchannel is the host's LED
+state (`get_last_received_report`), and a round trip through it costs far
+more than the hold it would be verifying.
 
 This is also the clearest reason a rewrite in a faster language would not
 help here: it would push the two reports closer together and lose more

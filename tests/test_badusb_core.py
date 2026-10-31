@@ -693,5 +693,82 @@ class TestKeyHold(CoreTestCase):
         self.assertEqual(self.core.time.monotonic(), before)
 
 
+class TestTypeText(CoreTestCase):
+    """The hold has to come out of the character delay, not on top of it,
+    or making typing reliable would also make it slower."""
+
+    def build(self, char_delay, hold=None):
+        if hold is None:
+            hold = self.core.KEY_HOLD_SECONDS
+
+        clock = {"t": 0.0}
+        events = []
+
+        class Clock:
+            @staticmethod
+            def sleep(seconds):
+                clock["t"] += seconds
+
+            @staticmethod
+            def monotonic():
+                return clock["t"]
+
+        self.core.time = Clock
+
+        class Layout:
+            def write(self, char):
+                events.append(("press", char, clock["t"]))
+                clock["t"] += hold          # what release_all now waits
+                events.append(("release", char, clock["t"]))
+
+        self.core.configure(
+            ssid="n", password="p", keyboard=self.keyboard,
+            keyboard_layout=Layout(), key_mapping=stubs.KEY_MAPPING,
+            script_path=os.path.join(self.tmp, "active.txt"),
+            script_dir=os.path.join(self.tmp, "scripts"),
+        )
+        return clock, events, hold
+
+    def test_character_rate_is_unchanged_by_the_hold(self):
+        char_delay = 0.010
+        clock, _events, _hold = self.build(char_delay)
+
+        self.core.type_text("hello", char_delay)
+
+        self.assertAlmostEqual(clock["t"], 5 * char_delay, places=6,
+                               msg="five characters should still take five "
+                                   "character delays, not five plus five holds")
+
+    def test_each_key_is_actually_held(self):
+        char_delay = 0.010
+        _clock, events, hold = self.build(char_delay)
+
+        self.core.type_text("ab", char_delay)
+
+        for i in range(0, len(events), 2):
+            press, release = events[i], events[i + 1]
+            self.assertAlmostEqual(release[2] - press[2], hold, places=6)
+
+    def test_the_hold_becomes_the_floor_for_very_short_delays(self):
+        """Asking for 1 ms characters gets 4 ms rather than nothing typed."""
+        _clock2, _e, hold = self.build(0.001)
+        clock, _events, _h = self.build(0.001)
+
+        self.core.type_text("abc", 0.001)
+
+        self.assertAlmostEqual(clock["t"], 3 * hold, places=6)
+
+    def test_a_generous_delay_is_respected(self):
+        clock, _events, _hold = self.build(0.050)
+        self.core.type_text("abcd", 0.050)
+        self.assertAlmostEqual(clock["t"], 4 * 0.050, places=6)
+
+    def test_empty_text_does_nothing(self):
+        clock, events, _hold = self.build(0.010)
+        self.core.type_text("", 0.010)
+        self.assertEqual(events, [])
+        self.assertEqual(clock["t"], 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()
