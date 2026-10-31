@@ -1,0 +1,83 @@
+name: tests
+
+# The firmware cannot be run here -- there is no CircuitPython and no
+# board -- so this covers what can be checked without one: that the shared
+# logic behaves, that both builds still import and register their routes,
+# and that the web page still works in a browser. Anything about USB HID
+# or the radio still needs flashing.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  python:
+    name: logic and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install lint tooling
+        run: pip install pyflakes
+
+      - name: Lint
+        # Deliberately not the vendored Adafruit libraries, which are
+        # .mpy anyway, nor anything we did not write.
+        run: |
+          pyflakes \
+            code.py \
+            Mouse_control_test/code.py \
+            lib/badusb_core.py \
+            tests/*.py \
+            tests/ui/*.py \
+            tools/*.py
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Both builds still import and register their routes
+        # The closest thing to "the board boots" that can be checked
+        # without a board: executes each code.py top to bottom against
+        # stubbed CircuitPython modules, then calls setup_server().
+        run: python tests/boot_simulation.py
+
+  browser:
+    name: web interface
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Build the compressed page
+        run: python tools/build_www.py
+
+      - name: Start the stand-in device
+        run: |
+          python tests/ui/mock_device.py &
+          for _ in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8111/wifi-status >/dev/null && exit 0
+            sleep 1
+          done
+          echo "mock device did not come up" >&2
+          exit 1
+
+      - name: Drive the page
+        run: node tests/ui/ui_test.js

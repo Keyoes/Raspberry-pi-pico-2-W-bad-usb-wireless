@@ -545,6 +545,8 @@ lib/badusb_core.py           shared: LED, WiFi, storage, validation, serving loo
 www/index.html               the web page, served from the device's /www
 tools/build_www.py           pre-compresses the page to .html.gz
 tests/                       runs on a desktop, no board required
+tests/boot_simulation.py     executes both builds against stubs
+.github/workflows/tests.yml  runs all of it on every push
 ```
 
 The two builds were near-identical copies, so a fix had to be made twice and
@@ -648,8 +650,24 @@ validator makes of each kind of line, that a dry run sends nothing, that a
 script name cannot escape its directory, and that the serving loop rebuilds
 its socket after a reconnect and not when the reconnect failed.
 
+There is also a simulated boot, which runs each build's `code.py` from top
+to bottom against stubbed CircuitPython modules and then brings its server
+up:
+
+```bash
+python3 tests/boot_simulation.py
+```
+
+It catches what stops a board dead after a refactor — a name that no
+longer exists, an import that moved, a route that raises — and is the
+closest check available without flashing.
+
 A green run means the logic holds. It says nothing about USB HID, the radio
 or the HTTP server, which are stubbed — those still need a real board.
+
+All of this runs on every push through `.github/workflows/tests.yml`: lint,
+the unit tests, the simulated boot, and the browser suite against the
+stand-in device.
 
 There is also a browser test for the web page itself, which needs Playwright
 and a Chromium:
