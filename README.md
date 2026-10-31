@@ -58,6 +58,11 @@ If your Raspberry Pi Pico 2 W already has MicroPython or other firmware installe
    - adafruit_ticks.mpy
    - adafruit_connection_manager.mpy
 
+3. Copy `badusb_core.py` from this repository's `lib` folder to the `lib`
+   folder on your CIRCUITPY drive. This one is not part of the Adafruit
+   bundle: it is this project's own shared code, used by both builds, and
+   `code.py` will not start without it.
+
 ### Step 3: Copy the Code Files
 
 1. Create `boot.py` in the root of your CIRCUITPY drive and copy the code from the provided boot.py file

@@ -1,4 +1,4 @@
-import os, time, json, board, digitalio, microcontroller, wifi, socketpool
+import time, json, wifi, socketpool, microcontroller
 import adafruit_httpserver.server as httpserver
 import adafruit_httpserver.response as httpresponse
 import adafruit_httpserver.methods as httpmethods
@@ -7,35 +7,12 @@ from adafruit_hid.keyboard_layout_us import KeyboardLayoutUS
 from adafruit_hid.keycode import Keycode
 import usb_hid
 
-def _init_status_led():
-    """Return the on-board status LED.
+# Status LED, WiFi, script storage, key parsing and the serving loop live in
+# lib/badusb_core.py, shared with the mouse build so a fix lands once.
+import badusb_core
 
-    Not every board exposes ``board.LED``. On most ESP32-S2/S3 boards the
-    on-board indicator is a NeoPixel (``board.NEOPIXEL``) or simply absent,
-    which used to raise AttributeError here and kill the script before it
-    ever reached the WiFi setup. Fall back to a no-op stub so the firmware
-    still boots; the LED is only a status indicator.
-    """
-    try:
-        pin = digitalio.DigitalInOut(board.LED)
-        pin.direction = digitalio.Direction.OUTPUT
-        return pin
-    except (AttributeError, ValueError) as exc:
-        print(f"No usable status LED ({exc}); continuing without it.")
-
-        class _NoStatusLed:
-            value = False
-
-        return _NoStatusLed()
-
-
-led = _init_status_led()
-
-for _ in range(3):
-    led.value = True
-    time.sleep(0.2)
-    led.value = False
-    time.sleep(0.2)
+led = badusb_core.led
+badusb_core.blink(3)
 
 WIFI_SSID = "YourWiFiName"
 WIFI_PASSWORD = "YourWiFiPassword"
@@ -68,159 +45,28 @@ KEY_MAPPING = {
 
 keyboard = Keyboard(usb_hid.devices[0])
 keyboard_layout = KeyboardLayoutUS(keyboard)
-script_in_memory = None
 
-def check_wifi_connection(max_attempts=2):
-    """Reconnect if the link dropped, and report whether we are online.
+badusb_core.configure(
+    ssid=WIFI_SSID,
+    password=WIFI_PASSWORD,
+    keyboard=keyboard,
+    keyboard_layout=keyboard_layout,
+    key_mapping=KEY_MAPPING,
+    script_path=SCRIPT_PATH,
+)
 
-    Deliberately bounded: this is called from the main serving loop, so an
-    unbounded retry here stops the device answering HTTP at all for as long
-    as the network is down.
-    """
-    if wifi.radio.connected:
-        return True
-
-    print("WiFi connection lost. Attempting to reconnect...")
-    connect_to_wifi(max_attempts=max_attempts, reset_on_failure=False)
-    return wifi.radio.connected
-
-def connect_to_wifi(max_attempts=0, retry_delay=5, reset_on_failure=True):
-    """Bring up the WiFi link.
-
-    max_attempts=0 retries forever, which is what we want at boot since
-    there is nothing else for the board to do until it is online. A positive
-    value bounds the attempts and returns False instead of blocking, for
-    callers that have to stay responsive.
-    """
-    attempt = 0
-
-    while True:
-        attempt += 1
-        print(f"Connecting to {WIFI_SSID}... (Attempt {attempt})")
-        
-        try:
-            led.value = True
-            time.sleep(0.2)
-            led.value = False
-            
-            wifi.radio.connect(WIFI_SSID, WIFI_PASSWORD)
-            
-            print(f"Connected to {WIFI_SSID}")
-            print(f"IP Address: {wifi.radio.ipv4_address}")
-            
-            for _ in range(2):
-                led.value = True
-                time.sleep(0.2)
-                led.value = False
-                time.sleep(0.2)
-                
-            return True
-            
-        except Exception as e:
-            print(f"Failed to connect to WiFi: {e}")
-            
-            led.value = True
-            time.sleep(1)
-            led.value = False
-            
-            if max_attempts and attempt >= max_attempts:
-                print(f"Giving up after {attempt} attempt(s).")
-                return False
-
-            if reset_on_failure and attempt % 10 == 0:
-                print(f"Reached {attempt} consecutive failed attempts; resetting.")
-                for _ in range(5):
-                    led.value = True
-                    time.sleep(0.1)
-                    led.value = False
-                    time.sleep(0.1)
-
-                microcontroller.reset()
-
-            print(f"Retrying in {retry_delay} seconds...")
-            time.sleep(retry_delay)
-            
-def save_script(script_content):
-    """Store the script and report honestly where it ended up.
-
-    Returns a description of where it was stored. The RAM fallback used to
-    return True just like a successful write, so callers reported "uploaded
-    successfully" for a script that never reached the filesystem and would
-    be lost on the next reset.
-    """
-    global script_in_memory
-
-    try:
-        try:
-            os.remove(SCRIPT_PATH)
-        except OSError:
-            pass
-
-        with open(SCRIPT_PATH, "w") as f:
-            f.write(script_content)
-
-        # Drop any stale RAM copy so it cannot shadow what is on disk.
-        script_in_memory = None
-        return "saved to flash"
-    except Exception as e:
-        print(f"Could not write {SCRIPT_PATH}: {e}; keeping the script in RAM only.")
-        script_in_memory = script_content
-        return "kept in RAM only, will be lost on reset"
-    
-def parse_key_combo(key_combo):
-    keys = []
-    if "+" in key_combo:
-        parts = key_combo.split("+")
-        for part in parts:
-            part = part.strip().upper()
-            if part in KEY_MAPPING:
-                keys.append(KEY_MAPPING[part])
-    else:
-        parts = key_combo.split()
-        for part in parts:
-            part = part.strip().upper()
-            if part in KEY_MAPPING:
-                keys.append(KEY_MAPPING[part])
-    
-    return keys
-def execute_key_combination(key_combo):
-    keycodes = parse_key_combo(key_combo)
-    
-    if keycodes:
-        try:
-            for key in keycodes:
-                keyboard.press(key)
-                time.sleep(0.05)
-            
-            time.sleep(0.15)
-            
-            for key in reversed(keycodes):
-                keyboard.release(key)
-                time.sleep(0.05)
-            
-            time.sleep(0.1)
-            return True
-        except Exception as e:
-            print(f"Error executing key combination: {e}")
-            keyboard.release_all()
-            time.sleep(0.1)
-            return False
-    return False
+check_wifi_connection = badusb_core.check_wifi_connection
+connect_to_wifi = badusb_core.connect_to_wifi
+save_script = badusb_core.save_script
+parse_key_combo = badusb_core.parse_key_combo
+execute_key_combination = badusb_core.execute_key_combination
 
 def execute_script():
-    global script_in_memory
-    
     try:
-        try:
-            with open(SCRIPT_PATH, "r") as f:
-                script_lines = f.readlines()
-        except OSError:
-            if script_in_memory:
-                script_lines = script_in_memory.splitlines()
-            else:
-                print("No script found in file or memory")
-                return False
-        
+        script_lines = badusb_core.load_script_lines()
+        if script_lines is None:
+            return False
+
         char_delay = 0.01
         
         for line in script_lines:
@@ -1173,83 +1019,18 @@ def setup_server():
         return None
 
 
-def restart_server(server):
-    """Stop the running server before starting a fresh one.
-
-    Without the stop, setup_server() tried to bind port 80 while the old
-    socket still held it, so start() raised, setup_server() returned None,
-    and every caller fell through to microcontroller.reset(). The whole
-    recovery path rebooted the board instead of recovering.
-    """
-    if server is not None:
-        try:
-            server.stop()
-        except Exception as e:
-            print(f"Could not stop the old server cleanly: {e}")
-
-    return setup_server()
-
-
 def main():
-    connect_to_wifi()
+    badusb_core.connect_to_wifi()
     server = setup_server()
-
-    last_wifi_check = time.monotonic()
-    wifi_check_interval = 60
-    # The HTTP interface is only as responsive as this loop runs. poll() does
-    # not block, so this pause is purely a yield; at the old 0.1 it added up
-    # to 100 ms to every request for no benefit.
-    poll_pause = 0.01
 
     if server:
         led.value = True
         time.sleep(1)
         led.value = False
-        
-        try:
-            while True:
-                try:
-                    server.poll()
-                except Exception as e:
-                    print(f"Error during server poll: {e}")
-                    if check_wifi_connection():
-                        print("Trying to restart server...")
-                        server = restart_server(server)
-                        if not server:
-                            microcontroller.reset()
 
-                current_time = time.monotonic()
-                if current_time - last_wifi_check > wifi_check_interval:
-                    was_offline = not wifi.radio.connected
-                    if check_wifi_connection() and was_offline:
-                        # Rebuild the socket only after an actual reconnect:
-                        # the IP may have changed, so the listener is stale.
-                        # This condition used to be inverted, restarting the
-                        # server precisely when the reconnect had failed and
-                        # leaving the stale socket in place when it worked.
-                        print("Reconnected; rebuilding the server socket.")
-                        server = restart_server(server)
-                        if not server:
-                            microcontroller.reset()
-                    last_wifi_check = time.monotonic()
-
-                time.sleep(poll_pause)
-
-        except Exception as e:
-            print(f"Server polling error: {e}")
-            check_wifi_connection()
-            try:
-                server = restart_server(server)
-                if not server:
-                    microcontroller.reset()
-            except Exception:
-                microcontroller.reset()
+        badusb_core.serve_forever(server, setup_server)
     else:
-        for _ in range(5):
-            led.value = True
-            time.sleep(0.1)
-            led.value = False
-            time.sleep(0.1)
+        badusb_core.blink(5, on=0.1, off=0.1)
         microcontroller.reset()
 
 if __name__ == "__main__":
