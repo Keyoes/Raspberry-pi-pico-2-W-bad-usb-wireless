@@ -739,6 +739,15 @@ validator makes of each kind of line, that a dry run sends nothing, that a
 script name cannot escape its directory, and that the serving loop rebuilds
 its socket after a reconnect and not when the reconnect failed.
 
+`tests/test_builds.py` covers the build files rather than the shared
+module: it imports the real `code.py` with CircuitPython stubbed, captures
+the route handlers as they register, and calls them. The important one
+there is the differential test. The dry run is only worth having if
+`classify_line` agrees with what `execute_script` actually does — a dry run
+that disagrees would tell you a script is fine when it is not — so both are
+run over the same lines and compared, including the `CTRL ALT DELETE` case
+where the validator promises that only the first key is sent.
+
 There is also a simulated boot, which runs each build's `code.py` from top
 to bottom against stubbed CircuitPython modules and then brings its server
 up:
