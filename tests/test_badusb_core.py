@@ -878,5 +878,36 @@ class TestHostVerification(CoreTestCase):
                                         if a == "press"])
 
 
+class TestRuntimeEstimate(CoreTestCase):
+    """A script runs inside the request handler, so its duration is also
+    how long the device stops answering. Worth knowing beforehand."""
+
+    def test_a_delay_dominates_the_estimate(self):
+        self.assertGreater(self.core.estimate_runtime("DELAY 60000"), 59)
+
+    def test_typing_scales_with_length(self):
+        short = self.core.estimate_runtime("STRING " + "a" * 10)
+        long = self.core.estimate_runtime("STRING " + "a" * 200)
+        self.assertGreater(long, short)
+
+    def test_per_line_overhead_is_counted(self):
+        """Leaving this out underestimated a fifty-line script by nearly
+        half, which would have made the warning useless."""
+        one = self.core.estimate_runtime("STRING hi")
+        fifty = self.core.estimate_runtime("\n".join(["STRING hi"] * 50))
+        self.assertGreater(fifty, 40 * one)
+
+    def test_comments_and_blanks_cost_nothing(self):
+        self.assertEqual(self.core.estimate_runtime("# note\n\nREM note"), 0.0)
+
+    def test_char_delay_changes_what_follows(self):
+        fast = self.core.estimate_runtime("CHAR_DELAY 1\nSTRING " + "a" * 100)
+        slow = self.core.estimate_runtime("CHAR_DELAY 50\nSTRING " + "a" * 100)
+        self.assertGreater(slow, fast)
+
+    def test_a_nonsense_delay_does_not_crash_the_estimate(self):
+        self.assertIsInstance(self.core.estimate_runtime("DELAY abc"), float)
+
+
 if __name__ == "__main__":
     unittest.main()

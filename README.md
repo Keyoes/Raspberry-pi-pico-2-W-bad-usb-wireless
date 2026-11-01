@@ -498,6 +498,22 @@ This is also the clearest reason a rewrite in a faster language would not
 help here: it would push the two reports closer together and lose more
 characters, not fewer.
 
+### A running script takes the web interface down with it
+
+`execute_script()` runs inside the request handler, so for as long as a
+payload lasts the device never polls its socket. The page stops
+answering, and the browser's own `/execute` request may time out even
+though the script is running perfectly.
+
+Measured: a single `DELAY 60000` makes the device unreachable for just
+over a minute. Fifty lines of `STRING` costs about ten seconds.
+
+Not fixed, because fixing it properly means interleaving the server poll
+with script execution, which is a restructure of the typing loop rather
+than a patch. Instead `/dry-run` now reports `estimated_seconds` and the
+page warns before you run anything over five seconds, so the silence is
+expected rather than alarming.
+
 ### Space-separated key combinations only send their first key
 
 `CTRL ALT DELETE` presses Ctrl and drops the rest. The interpreter matches

@@ -492,7 +492,10 @@ def setup_server():
                 return _json(request, {"error": "no script given or stored"}, status=404)
 
             return _json(request, {
-                "steps": badusb_core.explain_script(text, extra_commands=MOUSE_COMMANDS)
+                "steps": badusb_core.explain_script(text, extra_commands=MOUSE_COMMANDS),
+                # The script runs inside this handler, so for as long as
+                # it lasts the device answers nothing at all.
+                "estimated_seconds": badusb_core.estimate_runtime(text, extra_commands=MOUSE_COMMANDS),
             })
         except badusb_core.BodyTooLarge as e:
             return _json(request, {"error": str(e)}, status=413)
@@ -542,55 +545,67 @@ def setup_server():
     def api_badusb(request):
         try:
             content = badusb_core.read_body(request)
-            
-            try:
-                data = json.loads(content)
-                action = data.get("action", "")
-                
-                if action == "upload" and "script" in data:
-                    detail = save_script(data["script"])
-                    return httpresponse.Response(
-                        request,
-                        json.dumps({"status": "success",
-                                    "message": f"Enhanced script uploaded: {detail}"}),
-                        content_type="application/json",
-                    )
-
-                elif action == "execute":
-                    if execute_script():
-                        return httpresponse.Response(request, '{"status": "success", "message": "Enhanced script executed"}', 
-                                                  content_type="application/json")
-                    else:
-                        return httpresponse.Response(request, '{"status": "error", "message": "Failed to execute script"}', 
-                                                  status=500, content_type="application/json")
-                
-                elif action == "shortcuts":
-                    return httpresponse.Response(request, json.dumps({"shortcuts": COMMAND_SHORTCUTS}),
-                                               content_type="application/json")
-                
-                else:
-                    return httpresponse.Response(request, '{"status": "error", "message": "Invalid action"}', 
-                                              status=400, content_type="application/json")
-                
-            except ValueError:
-                detail = save_script(content)
-                if execute_script():
-                    return httpresponse.Response(
-                        request, f"Enhanced script uploaded ({detail}) and executed successfully"
-                    )
-                return httpresponse.Response(
-                    request, f"Script uploaded ({detail}) but execution failed", status=500
-                )
-
         except badusb_core.BodyTooLarge as e:
-            return httpresponse.Response(request, json.dumps({"status": "error", "message": str(e)}),
-                                      status=413, content_type="application/json")
+            return _json(request, {"status": "error", "message": str(e)}, status=413)
+
+        # Parse first, and catch only the parse. This used to be one try
+        # wrapping json.loads *and* the handlers below, so a ValueError
+        # raised while handling a perfectly good request fell through to
+        # the raw-script path -- which saved the request's own JSON over
+        # the stored script and reported success. Losing a payload and
+        # being told it worked is the kind of bug this file has had
+        # before.
+        try:
+            data = json.loads(content)
+        except ValueError:
+            data = None
+
+        if data is None:
+            # Not JSON at all: the documented "post a script and run it"
+            # shortcut.
+            detail = save_script(content)
+            if execute_script():
+                return httpresponse.Response(
+                    request, f"Enhanced script uploaded ({detail}) and executed successfully"
+                )
+            return httpresponse.Response(
+                request, f"Enhanced script uploaded ({detail}) but execution failed",
+                status=500,
+            )
+
+        if not isinstance(data, dict):
+            # Valid JSON of the wrong shape, e.g. a bare string or list.
+            # That is the caller's mistake, not ours; it used to answer 500.
+            return _json(request, {
+                "status": "error",
+                "message": "expected a JSON object, or a plain script as the body",
+            }, status=400)
+
+        action = data.get("action", "")
+
+        try:
+            if action == "upload" and "script" in data:
+                detail = save_script(data["script"])
+                return _json(request, {
+                    "status": "success",
+                    "message": f"Enhanced script uploaded: {detail}",
+                })
+
+            if action == "execute":
+                if execute_script():
+                    return _json(request, {"status": "success",
+                                           "message": "Enhanced script executed"})
+                return _json(request, {"status": "error",
+                                       "message": "Failed to execute script"},
+                             status=500)
+
+            return _json(request, {"status": "error",
+                                   "message": f"unknown action {action!r}"},
+                         status=400)
         except Exception as e:
-            # json.dumps, not an f-string: an exception message containing a
-            # quote or backslash used to produce invalid JSON here.
-            return httpresponse.Response(request, json.dumps({"status": "error", "message": str(e)}),
-                                      status=500, content_type="application/json")
-    
+            return _json(request, {"status": "error", "message": str(e)},
+                         status=500)
+
     print("Starting enhanced server on port 80...")
     try:
         server.start(port=80)

@@ -818,8 +818,16 @@
                     return;
                 }
 
-                showReport(['<span class="report-ok">Would do, without sending '
-                            + 'anything:</span>'].concat(
+                const secs = data.estimated_seconds;
+                const header = secs >= 5
+                    ? '<span class="report-problem">Would take about '
+                      + `${Math.round(secs)}s, during which the device answers `
+                      + 'nothing — the page will look dead and this request '
+                      + 'may time out.</span>'
+                    : '<span class="report-ok">Would do, without sending '
+                      + `anything (about ${secs}s):</span>`;
+
+                showReport([header].concat(
                     data.steps.map(step => {
                         let row = '<span class="report-line">  ' + step.line + '. '
                                 + escapeHtml(step.detail || step.kind);

@@ -325,5 +325,65 @@ class TestMouseBuild(BuildTestCase):
         self.assertGreater(travelled, 90, "undershoot should be small")
 
 
+class TestApiEndpoint(BuildTestCase):
+    """/api/badusb accepts either a JSON command or a plain script, which
+    makes its error handling easy to get wrong -- and it was."""
+
+    def post(self, body):
+        return self.call("POST", "/api/badusb",
+                         Request(body.encode() if isinstance(body, str) else body))
+
+    def test_a_json_upload_stores_the_script(self):
+        response = self.post(json.dumps({"action": "upload", "script": "STRING hi"}))
+        self.assertEqual(self.json_body(response)["status"], "success")
+        self.assertIn("STRING hi", self.core.read_script())
+
+    def test_a_plain_script_is_stored_and_run(self):
+        EVENTS.clear()
+        self.post("STRING salut")
+        self.assertEqual("".join(k for a, k in EVENTS if a == "type"), "salut")
+
+    def test_valid_json_of_the_wrong_shape_is_a_400(self):
+        """A bare string, number or list is the caller's mistake. These
+        answered 500 before, which blames the device for it."""
+        for body in ('"hello"', "123", "[1, 2]"):
+            with self.subTest(body=body):
+                self.assertEqual(self.post(body).status, 400)
+
+    def test_an_unknown_action_is_a_400(self):
+        self.assertEqual(self.post(json.dumps({"action": "nope"})).status, 400)
+
+    def test_a_failed_upload_does_not_overwrite_the_stored_script(self):
+        """The parse-failure path used to be reachable from a failure
+        inside the upload branch, which saved the request's own JSON over
+        whatever was stored and reported success. Only json.loads is
+        caught now."""
+        self.core.save_script("STRING original\n")
+
+        calls = {"n": 0}
+        real_save = self.core.save_script
+
+        def failing_save(content):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise ValueError("transient")
+            return real_save(content)
+
+        self.core.save_script = failing_save
+        self.module.save_script = failing_save
+        try:
+            response = self.post(json.dumps({"action": "upload", "script": "x"}))
+        finally:
+            self.core.save_script = real_save
+            self.module.save_script = real_save
+
+        self.assertEqual(response.status, 500, "a failed upload should say so")
+        self.assertIn("STRING original", self.core.read_script(),
+                      "the stored script must survive a failed upload")
+
+    def test_an_oversized_body_is_still_a_413(self):
+        self.assertEqual(self.post("x" * 99999).status, 413)
+
+
 if __name__ == "__main__":
     unittest.main()

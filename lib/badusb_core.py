@@ -479,6 +479,65 @@ def validate_script(text, extra_commands=()):
     return problems
 
 
+# What execute_script spends on each executed line beyond the work
+# itself, for the runtime estimate below.
+PER_LINE_OVERHEAD = 0.1
+
+
+def estimate_runtime(text, extra_commands=(), char_delay=0.01):
+    """Roughly how long a script will take to run, in seconds.
+
+    Worth knowing before pressing execute, because the script runs
+    synchronously inside the request handler: for as long as it lasts the
+    device does not poll its socket, so the page stops answering and the
+    browser's own request may time out even though the script is running
+    fine. A single DELAY 60000 takes the whole interface down for a
+    minute.
+
+    An estimate, not a promise -- it counts the delays the script asks
+    for and the per-character and per-key costs, and knows nothing about
+    how fast the host is.
+    """
+    total = 0.0
+    delay = char_delay
+
+    for line in text.splitlines():
+        kind, _detail, _warning = classify_line(line, extra_commands)
+        stripped = line.strip()
+
+        if kind in ("blank", "comment"):
+            continue
+
+        if kind == "char_delay":
+            try:
+                delay = float(stripped.split(" ", 1)[1]) / 1000.0
+            except (IndexError, ValueError):
+                pass
+            continue
+
+        if kind == "delay":
+            try:
+                total += float(stripped.split(" ", 1)[1]) / 1000.0
+            except (IndexError, ValueError):
+                pass
+            continue
+
+        if kind == "string":
+            text_part = stripped.split(" ", 1)[1] if " " in stripped else ""
+            total += len(text_part) * max(delay, KEY_HOLD_SECONDS) + 0.05
+        else:
+            # A key or a combination: the press/release pacing in
+            # execute_key_combination.
+            total += 0.25
+
+        # Every executed line also pays the pause the interpreter takes
+        # after it. Leaving this out underestimated a long script by
+        # nearly half.
+        total += PER_LINE_OVERHEAD
+
+    return round(total, 2)
+
+
 def explain_script(text, extra_commands=()):
     """Describe what a script would do, line by line, sending nothing.
 
